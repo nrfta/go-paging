@@ -1,0 +1,38 @@
+input PageArgs {
+  """
+  first refers to the limit of items to return
+  """
+  first: Int
+
+  """
+  return the records after this token
+  """
+  after: String
+}
+
+type PageInfo {
+  """
+  hasPreviousPage informs if there is a previous page
+  """
+  hasPreviousPage: Boolean!
+
+  """
+  hasNextPage informs if there is a next page
+  """
+  hasNextPage: Boolean!
+
+  """
+  totalCount the total number of records
+  """
+  totalCount: Int
+
+  """
+  startCursor refers to the start of the first page
+  """
+  startCursor: String
+
+  """
+  endCursor refers to the the first item of the last page
+  """
+  endCursor: String
+}

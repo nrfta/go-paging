@@ -2,8 +2,8 @@ package paging
 
 // PageArgs is used as the query inputs
 type PageArgs struct {
-	First *int
-	After *string
+	First *int    `json:"first,omitempty"`
+	After *string `json:"after,omitempty"`
 }
 
 // PageInfo is the base struct for building PageInfo. It expects inline functions for all the fields

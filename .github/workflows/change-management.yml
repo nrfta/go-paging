@@ -1,0 +1,91 @@
+on:
+  pull_request:
+    types: [opened, edited, closed, reopened]
+
+jobs:
+  change-management:
+    runs-on: ubuntu-latest
+    name: Change Management
+    env:
+      WORKSPACE_GID: "9331176188423"
+      PROJECT_GID: "1202267217415053"
+      SECTION_GID: "1203075160692525"
+    steps:
+      - id: PR
+        uses: 8BitJonny/gh-get-current-pr@2.1.1
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Create Asana Task
+        if: contains(steps.PR.outputs.pr_body, 'Change management:') != true
+        shell: bash
+        run: |
+          echo "creating change management task"
+          repo_name="$(cut -d "/" -f2 <<< "${{ github.repository }}")"
+          task_name="${repo_name}: ${{ steps.PR.outputs.pr_title }}"
+          post_data="$(jq --null-input --arg name "$task_name" --arg project_gid "$PROJECT_GID" '{
+              "data": {
+                "projects":[ $project_gid ],
+                "followers": ["rcoleman@underline.com"],
+                "name": $name
+              }
+            }')"
+          task_data=$(curl -s -f -X POST https://app.asana.com/api/1.0/tasks \
+            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "$post_data")
+          task_gid=$(echo "$task_data" | jq -r '.data.gid')
+          task_url=$(echo "$task_data" | jq -r '.data.permalink_url')
+
+          echo "adding pull request url as comment to task"
+          comment="PR created: ${{ steps.PR.outputs.pr_url }}"
+          post_data="$(jq --null-input --arg comment "$comment" '{
+            "data": {
+              "text": $comment
+            }
+          }')"
+          curl -s -f -X POST https://app.asana.com/api/1.0/tasks/$task_gid/stories \
+            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "$post_data"
+
+          echo "adding task to the 'Pull Requests' section"
+          post_data="$(jq --null-input --arg task_gid $task_gid '{"data":{"task": $task_gid }}')"
+          curl -s -f -X POST https://app.asana.com/api/1.0/sections/$SECTION_GID/addTask \
+            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "$post_data"
+
+          echo "updating the PR description with the link to the task"
+          pr_body="$(echo -e "${{ steps.PR.outputs.pr_body }}\n---\nChange management: $task_url\n")"
+          post_data="$(jq --null-input --arg body "$pr_body" '{"body": $body}')"
+          repo="${{ github.repository }}"
+          pr_num="${{ steps.PR.outputs.number }}"
+          curl -s -f -X PATCH https://api.github.com/repos/$repo/pulls/$pr_num \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -d "$post_data"
+
+      - name: Title Change
+        if: github.event.action == 'edited'
+        shell: bash
+        run: |
+          body="${{ steps.PR.outputs.pr_body }}"
+          task_gid="$(echo -e "$body" | grep 'Change management:' | cut -d "/" -f6)"
+          echo $task_gid
+          repo_name="$(cut -d "/" -f2 <<< "${{ github.repository }}")"
+          task_name="${repo_name}: ${{ steps.PR.outputs.pr_title }}"
+          post_data="$(jq --null-input --arg task_name "$task_name" '{"data":{"name":$task_name}}')"
+          curl -s -f -X PUT https://app.asana.com/api/1.0/tasks/$task_gid \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
+            -d "$post_data"
+
+      - name: Create a comment
+        uses: Asana/comment-on-task-github-action@latest
+        with:
+          asana-secret: ${{ secrets.ASANA_ACTION_SECRET }}
+          comment-text: "{{PR_NAME}} is {{PR_STATE}}: {{PR_URL}}"

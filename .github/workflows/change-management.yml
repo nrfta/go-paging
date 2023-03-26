@@ -6,120 +6,27 @@ jobs:
   change-management:
     runs-on: ubuntu-latest
     name: Change Management
-    env:
-      WORKSPACE_GID: "9331176188423"
-      PROJECT_GID: "1202267217415053"
-      SECTION_GID: "1203075160692525"
+
     steps:
-      - name: Create Asana Task
-        if: contains(github.event.pull_request.body, 'Change management:') != true
-        shell: bash
-        run: |
-          echo "creating change management task"
-          repo_name="$(cut -d "/" -f2 <<< "${{ github.repository }}")"
-          task_name="${repo_name}: ${{ github.event.pull_request.title }}"
-          post_data="$(jq --null-input --arg name "$task_name" --arg project_gid "$PROJECT_GID" '{
-              "data": {
-                "projects":[ $project_gid ],
-                "followers": ["rcoleman@underline.com"],
-                "name": $name
-              }
-            }')"
-          task_data=$(curl -s -f -X POST https://app.asana.com/api/1.0/tasks \
-            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d "$post_data")
-          task_gid=$(echo "$task_data" | jq -r '.data.gid')
-          task_url=$(echo "$task_data" | jq -r '.data.permalink_url')
+      - uses: actions/checkout@v3
 
-          echo "adding pull request url as comment to task"
-          comment="PR created: ${{ github.event.pull_request._links.html }}"
-          post_data="$(jq --null-input --arg comment "$comment" '{
-            "data": {
-              "text": $comment
-            }
-          }')"
-          curl -s -f -X POST https://app.asana.com/api/1.0/tasks/$task_gid/stories \
-            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d "$post_data"
-
-          echo "adding task to the 'Pull Requests' section"
-          post_data="$(jq --null-input --arg task_gid $task_gid '{"data":{"task": $task_gid }}')"
-          curl -s -f -X POST https://app.asana.com/api/1.0/sections/$SECTION_GID/addTask \
-            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "$post_data"
-
-          echo "updating the PR description with the link to the task"
-          pr_body="$(echo -e "${{ github.event.pull_request.body }}\n---\nChange management: $task_url\n")"
-          post_data="$(jq --null-input --arg body "$pr_body" '{"body": $body}')"
-          repo="${{ github.repository }}"
-          pr_num="${{ github.event.number }}"
-          curl -s -f -X PATCH https://api.github.com/repos/$repo/pulls/$pr_num \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -d "$post_data"
-
-      - name: Title Change
-        if: github.event.action == 'edited'
-        shell: bash
-        run: |
-          body="${{ github.event.pull_request.body }}"
-          task_gid="$(echo -e "$body" | grep 'Change management:' | cut -d "/" -f6)"
-          echo $task_gid
-          if [ "$task_gid" == "" ]; then
-            exit 0
-          fi
-          repo_name="$(cut -d "/" -f2 <<< "${{ github.repository }}")"
-          task_name="${repo_name}: ${{ github.event.pull_request.title }}"
-          post_data="$(jq --null-input --arg task_name "$task_name" '{"data":{"name":$task_name}}')"
-          curl -s -f -X PUT https://app.asana.com/api/1.0/tasks/$task_gid \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json' \
-            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
-            -d "$post_data"
-
-      - name: Merged
-        if: github.event.action == 'closed' && github.event.pull_request.merged == true
-        shell: bash
-        run: |
-          body="${{ github.event.pull_request.body }}"
-          task_gid="$(echo -e "$body" | grep 'Change management:' | cut -d "/" -f6)"
-          echo $task_gid
-          post_data='{"data":{"completed":true}}'
-          curl -s -f -X PUT https://app.asana.com/api/1.0/tasks/$task_gid \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json' \
-            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}" \
-            -d "$post_data"
-
-      - name: Create a comment
-        uses: Asana/comment-on-task-github-action@latest
+      - uses: actions/setup-python@v4
         with:
-          asana-secret: ${{ secrets.ASANA_ACTION_SECRET }}
-          comment-text: "{{PR_NAME}} is {{PR_STATE}}: {{PR_URL}}"
+          python-version: '3.10' 
 
-      - name: Closed
-        if: github.event.action == 'closed' && github.event.pull_request.merged == false
-        shell: bash
+      - name: install dependencies
         run: |
-          echo "updating the PR description to remove the link to the task"
-          pr_body="$(echo -e "${{ github.event.pull_request.body }}" | sed '/Change management:/,+2d' | sed '$d')"
-          post_data="$(jq --null-input --arg body "$pr_body" '{"body": $body}')"
-          repo="${{ github.repository }}"
-          pr_num="${{ github.event.number }}"
-          curl -s -f -X PATCH https://api.github.com/repos/$repo/pulls/$pr_num \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -d "$post_data"
+          pip install requests
 
-          echo "deleting Asana task"
-          body="${{ github.event.pull_request.body }}"
-          task_gid="$(echo -e "$body" | grep 'Change management:' | cut -d "/" -f6)"
-          echo $task_gid
-          curl -s -f -X DELETE https://app.asana.com/api/1.0/tasks/$task_gid \
-            -H 'Accept: application/json' \
-            -H "Authorization: Bearer ${{ secrets.ASANA_API_TOKEN }}"
+      - name: "Change Management"
+        working-directory: ./.github
+        run: |
+          echo '${{ toJSON(github.event.pull_request) }}' > pr_info.json
+
+          python change_management.py \
+            "${{ github.repository }}" \
+            pr_info.json \
+            "${{ github.event.action }}"
+        env:
+          ASANA_API_TOKEN: "${{ secrets.ASANA_API_TOKEN }}"
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

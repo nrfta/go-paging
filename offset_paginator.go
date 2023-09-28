@@ -1,6 +1,8 @@
 package paging
 
 import (
+	"strings"
+
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
@@ -11,6 +13,7 @@ type OffsetPaginator struct {
 	Limit    int
 	Offset   int
 	PageInfo PageInfo
+	orderBy  string
 }
 
 // NewOffsetPaginator creates a new offset paginator
@@ -34,10 +37,20 @@ func NewOffsetPaginator(
 
 	offset := DecodeOffsetCursor(page.After)
 
+	orderBy := "created_at"
+	if len(page.sortByCols) > 0 {
+		orderBy = strings.Join(page.sortByCols, ", ")
+	}
+
+	if page.isDesc {
+		orderBy = orderBy + " DESC"
+	}
+
 	return OffsetPaginator{
 		Limit:    limit,
 		Offset:   offset,
 		PageInfo: NewOffsetBasedPageInfo(&limit, totalCount, offset),
+		orderBy:  orderBy,
 	}
 }
 
@@ -46,5 +59,6 @@ func (p *OffsetPaginator) QueryMods() []qm.QueryMod {
 	return []qm.QueryMod{
 		qm.Offset(p.Offset),
 		qm.Limit(p.Limit),
+		qm.OrderBy(p.orderBy),
 	}
 }

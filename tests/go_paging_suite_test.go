@@ -9,5 +9,5 @@ import (
 
 func TestGoPaging(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "GoPaging Suite")
+	RunSpecs(t, "GoPaging Test Suite")
 }

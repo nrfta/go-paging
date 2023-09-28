@@ -74,5 +74,8 @@ var _ = Describe("OffsetPaginator", func() {
 
 		qm2 := reflect.TypeOf(mods[1]).String()
 		Expect(qm2).To(Equal("qm.limitQueryMod"))
+
+		qm3 := reflect.TypeOf(mods[2]).String()
+		Expect(qm3).To(Equal("qm.orderByQueryMod"))
 	})
 })

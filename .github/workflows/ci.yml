@@ -9,24 +9,19 @@ on:
 
 jobs:
   test:
-    name: Tests in Go ${{ matrix.go }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        go: [ '1.13', '1.12' ]
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Tests
+    runs-on: ubuntu-latest
 
     env:
       ENV: test
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
-          go-version: ${{matrix.go}}
+          go-version: 1.24.x
 
       - name: Tests
         run: go test -v ./...

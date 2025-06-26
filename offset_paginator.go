@@ -3,7 +3,7 @@ package paging
 import (
 	"strings"
 
-	"github.com/volatiletech/sqlboiler/v4/queries/qm"
+	"github.com/aarondl/sqlboiler/v4/queries/qm"
 )
 
 const defaultLimitVal = 50

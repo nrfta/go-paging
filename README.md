@@ -1,6 +1,6 @@
 # go-paging ![](https://github.com/nrfta/go-paging/workflows/CI/badge.svg)
 
-Go pagination for [SQLBoiler](https://github.com/volatiletech/sqlboiler) and [gqlgen](https://github.com/99designs/gqlgen/) (GraphQL).
+Go pagination for [SQLBoiler](https://github.com/aarondl/sqlboiler) and [gqlgen](https://github.com/99designs/gqlgen/) (GraphQL).
 
 ## Install
 
@@ -74,7 +74,7 @@ import (
   "context"
 
 	"github.com/nrfta/go-paging"
-	"github.com/volatiletech/sqlboiler/v4/queries/qm"
+	"github.com/aarondl/sqlboiler/v4/queries/qm"
 
 	"github.com/my-user/my-app/models"
 )

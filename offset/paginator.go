@@ -195,6 +195,6 @@ func newOffsetBasedPageInfo(
 		StartCursor:     func() (*string, error) { return EncodeCursor(0), nil },
 		EndCursor:       func() (*string, error) { return EncodeCursor(endOffset), nil },
 		HasNextPage:     func() (bool, error) { return (currentOffset+*pageSize < count), nil },
-		HasPreviousPage: func() (bool, error) { return (currentOffset-*pageSize > 0), nil },
+		HasPreviousPage: func() (bool, error) { return currentOffset > 0, nil },
 	}
 }

@@ -3,11 +3,11 @@ package offset_test
 import (
 	"reflect"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/nrfta/go-paging"
 	"github.com/nrfta/go-paging/offset"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Paginator", func() {

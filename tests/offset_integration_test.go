@@ -26,6 +26,19 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 		Expect(userIDs).To(HaveLen(25))
 	})
 
+	// Helper to create a standard user fetcher with offset strategy
+	createUserFetcher := func() paging.Fetcher[*models.User] {
+		return sqlboiler.NewFetcher(
+			func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+				return models.Users(mods...).All(ctx, container.DB)
+			},
+			func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+				return models.Users(mods...).Count(ctx, container.DB)
+			},
+			sqlboiler.OffsetToQueryMods,
+		)
+	}
+
 	Describe("Basic Offset Pagination", func() {
 		It("should paginate users with default page size using SQLBoiler", func() {
 			// Get total count using SQLBoiler
@@ -40,16 +53,8 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			}
 			paginator := offset.New(pageArgs, totalCount)
 
-			// Create SQLBoiler fetcher with offset strategy
-			fetcher := sqlboiler.NewFetcher(
-				func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-					return models.Users(mods...).All(ctx, container.DB)
-				},
-				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-					return models.Users(mods...).Count(ctx, container.DB)
-				},
-				sqlboiler.OffsetToQueryMods,
-			)
+			// Create fetcher
+			fetcher := createUserFetcher()
 
 			// Fetch with pagination
 			fetchParams := paging.FetchParams{
@@ -92,16 +97,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			}
 			paginator := offset.New(pageArgs, totalCount)
 
-			// Create fetcher and fetch
-			fetcher := sqlboiler.NewFetcher(
-				func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-					return models.Users(mods...).All(ctx, container.DB)
-				},
-				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-					return models.Users(mods...).Count(ctx, container.DB)
-				},
-				sqlboiler.OffsetToQueryMods,
-			)
+			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
@@ -136,16 +132,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			}
 			paginator := offset.New(pageArgs, totalCount)
 
-			// Create fetcher and fetch
-			fetcher := sqlboiler.NewFetcher(
-				func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-					return models.Users(mods...).All(ctx, container.DB)
-				},
-				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-					return models.Users(mods...).Count(ctx, container.DB)
-				},
-				sqlboiler.OffsetToQueryMods,
-			)
+			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
@@ -178,16 +165,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			pageArgs := paging.WithSortBy(&paging.PageArgs{First: &first}, false, "email")
 			paginator := offset.New(pageArgs, totalCount)
 
-			// Create fetcher and fetch
-			fetcher := sqlboiler.NewFetcher(
-				func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-					return models.Users(mods...).All(ctx, container.DB)
-				},
-				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-					return models.Users(mods...).Count(ctx, container.DB)
-				},
-				sqlboiler.OffsetToQueryMods,
-			)
+			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
@@ -217,16 +195,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(totalCount).To(Equal(int64(100)))
 
-			// Create fetcher once
-			fetcher := sqlboiler.NewFetcher(
-				func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-					return models.Users(mods...).All(ctx, container.DB)
-				},
-				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-					return models.Users(mods...).Count(ctx, container.DB)
-				},
-				sqlboiler.OffsetToQueryMods,
-			)
+			fetcher := createUserFetcher()
 
 			// Paginate through all pages
 			pageSize := 25

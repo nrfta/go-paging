@@ -1,8 +1,6 @@
 package offset_test
 
 import (
-	"reflect"
-
 	"github.com/nrfta/go-paging"
 	"github.com/nrfta/go-paging/offset"
 
@@ -70,14 +68,9 @@ var _ = Describe("Paginator", func() {
 
 			mods := paginator.QueryMods()
 
-			qm1 := reflect.TypeOf(mods[0]).String()
-			Expect(qm1).To(Equal("qm.offsetQueryMod"))
-
-			qm2 := reflect.TypeOf(mods[1]).String()
-			Expect(qm2).To(Equal("qm.limitQueryMod"))
-
-			qm3 := reflect.TypeOf(mods[2]).String()
-			Expect(qm3).To(Equal("qm.orderByQueryMod"))
+			Expect(modTypeName(mods[0])).To(Equal("qm.offsetQueryMod"))
+			Expect(modTypeName(mods[1])).To(Equal("qm.limitQueryMod"))
+			Expect(modTypeName(mods[2])).To(Equal("qm.orderByQueryMod"))
 		})
 	})
 

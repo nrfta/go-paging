@@ -9,40 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// User represents a test user record.
-// Matches the users table schema in container.go
-type User struct {
-	ID        string
-	Email     string
-	Name      string
-	Age       *int
-	IsActive  bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-// Post represents a test post record.
-// Matches the posts table schema in container.go
-type Post struct {
-	ID          string
-	UserID      string
-	Title       string
-	Content     *string
-	ViewCount   int
-	PublishedAt *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-// SeedUsers creates test users in the database.
-// Returns a slice of created user IDs for use in tests.
-//
-// Example:
-//
-//	userIDs, err := testing.SeedUsers(ctx, db, 50)
-//	if err != nil {
-//	    panic(err)
-//	}
+// SeedUsers creates test users in the database and returns their IDs.
 func SeedUsers(ctx context.Context, db *sql.DB, count int) ([]string, error) {
 	userIDs := make([]string, count)
 
@@ -77,12 +44,7 @@ func SeedUsers(ctx context.Context, db *sql.DB, count int) ([]string, error) {
 	return userIDs, nil
 }
 
-// SeedPosts creates test posts for the given users.
-// Returns a slice of created post IDs.
-//
-// Example:
-//
-//	postIDs, err := testing.SeedPosts(ctx, db, userIDs, 10)
+// SeedPosts creates test posts for the given users and returns their IDs.
 func SeedPosts(ctx context.Context, db *sql.DB, userIDs []string, postsPerUser int) ([]string, error) {
 	if len(userIDs) == 0 {
 		return nil, fmt.Errorf("no user IDs provided")
@@ -132,13 +94,6 @@ func SeedPosts(ctx context.Context, db *sql.DB, userIDs []string, postsPerUser i
 
 // CleanupTables truncates all test tables.
 // Useful for cleanup between tests when sharing a database instance.
-//
-// Example:
-//
-//	BeforeEach(func() {
-//	    err := testing.CleanupTables(ctx, container.DB)
-//	    Expect(err).ToNot(HaveOccurred())
-//	})
 func CleanupTables(ctx context.Context, db *sql.DB) error {
 	// Truncate in correct order (posts first due to FK constraint)
 	tables := []string{"posts", "users"}
@@ -153,27 +108,12 @@ func CleanupTables(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// GetUserCount returns the total number of users in the database.
-// Useful for verifying pagination metadata.
-func GetUserCount(ctx context.Context, db *sql.DB) (int64, error) {
-	var count int64
-	err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
-	return count, err
+// TrimToLimit returns items[:limit] if len(items) > limit, otherwise returns items unchanged.
+// Used for N+1 pattern comparisons where we fetch LIMIT+1 but only want to compare LIMIT items.
+func TrimToLimit[T any](items []T, limit int) []T {
+	if len(items) > limit {
+		return items[:limit]
+	}
+	return items
 }
 
-// GetPostCount returns the total number of posts in the database.
-func GetPostCount(ctx context.Context, db *sql.DB) (int64, error) {
-	var count int64
-	err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM posts").Scan(&count)
-	return count, err
-}
-
-// GetPublishedPostCount returns the number of published posts.
-// Useful for testing filtered queries.
-func GetPublishedPostCount(ctx context.Context, db *sql.DB) (int64, error) {
-	var count int64
-	err := db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM posts WHERE published_at IS NOT NULL",
-	).Scan(&count)
-	return count, err
-}

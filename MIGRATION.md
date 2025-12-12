@@ -1,6 +1,6 @@
-# Migration Guide
+# Migration Guide: v0.3.0 to v1.0
 
-This guide helps you migrate from the old `go-paging` API to the new modular architecture.
+This guide helps you migrate from go-paging v0.3.0 to the new v1.0 modular architecture.
 
 ## Quick Summary
 
@@ -23,13 +23,15 @@ This guide helps you migrate from the old `go-paging` API to the new modular arc
 - ✨ **60-80% less boilerplate** with `offset.BuildConnection()`
 - ✨ Generic `Connection[T]` and `Edge[T]` types
 - ✨ Type-safe transformations with automatic error handling
-- ✨ Modular architecture ready for cursor and quota-fill pagination
+- ✨ Modular architecture with cursor and quota-fill pagination support
 
 ## Overview
 
 The library has been refactored to use a modular package structure:
 
 - **`offset/`** package: Offset-based pagination with cursor encoding
+- **`cursor/`** package: Cursor-based (keyset) pagination
+- **`quotafill/`** package: Filter-aware iterative fetching
 - **`sqlboiler/`** package: SQLBoiler ORM adapter (generic + strategy-specific)
 - **Root package**: Shared types (`PageArgs`, `PageInfo`, `Connection[T]`, `Edge[T]`)
 
@@ -98,7 +100,7 @@ var paginator offset.Paginator
 
 ### 4. Use BuildConnection (Recommended!)
 
-This is the **biggest improvement** in v2. Instead of manually building edges and nodes, use `offset.BuildConnection()`:
+This is the **biggest improvement** in v1.0. Instead of manually building edges and nodes, use `offset.BuildConnection()`:
 
 **Before (Manual Boilerplate - 15+ lines):**
 
@@ -150,6 +152,7 @@ func toDomainUser(db *models.User) (*User, error) {
 ```
 
 **Benefits:**
+
 - ✅ 60-80% less code
 - ✅ No manual cursor encoding
 - ✅ Automatic error handling
@@ -297,8 +300,8 @@ These parts of the API remain unchanged:
 
 Cursor encoding/decoding functions have moved to the offset package and been renamed:
 
-| Old (v1) | New (v2) |
-|----------|----------|
+| Old (v0.3.0) | New (v1.0) |
+|--------------|------------|
 | `paging.EncodeOffsetCursor()` | `offset.EncodeCursor()` |
 | `paging.DecodeOffsetCursor()` | `offset.DecodeCursor()` |
 
@@ -320,7 +323,7 @@ offsetValue := offset.DecodeCursor(cursor)
 
 ## Advanced: Generic Connection Types
 
-v2 introduces generic `Connection[T]` and `Edge[T]` types:
+v1.0 introduces generic `Connection[T]` and `Edge[T]` types:
 
 ```go
 // Built-in generic types
@@ -365,6 +368,7 @@ models:
 The SQLBoiler adapter has been refactored for extensibility. **Most users don't need to change anything** - this only affects advanced use cases.
 
 **What changed:**
+
 - Split into `fetcher.go` (generic ORM integration) + `offset.go` (strategy-specific queries)
 - Enables future support for cursor pagination and other ORMs (GORM, sqlc, etc.)
 
@@ -409,14 +413,24 @@ If you encounter issues during migration, please:
 3. Check the test files for usage patterns
 4. Open an issue on GitHub with your specific use case
 
-## Coming Soon
+## What's New in v1.0
 
-**Phase 2: Cursor Pagination**
+**Phase 1: Offset Pagination** ✅ Complete
+
+- Connection/Edge builders
+- Modular architecture
+- Offset pagination with page numbers
+
+**Phase 2: Cursor Pagination** ✅ Complete
+
 - High-performance keyset pagination
 - O(1) complexity regardless of page depth
 - Same `BuildConnection()` pattern
+- Composite cursor encoding
 
-**Phase 3: Quota-Fill Pagination**
+**Phase 3: Quota-Fill Pagination** ✅ Complete
+
 - Authorization-aware filtering
 - Consistent page sizes with per-item filtering
 - Works with cursor or offset strategies
+- Adaptive backoff and safeguards

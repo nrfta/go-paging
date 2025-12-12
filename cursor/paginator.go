@@ -117,6 +117,37 @@ func New[T any](
 	}
 }
 
+// BuildFetchParams creates FetchParams with automatic N+1 pattern for accurate HasNextPage detection.
+func BuildFetchParams[T any](
+	page PageArgs,
+	encoder paging.CursorEncoder[T],
+	orderBy []paging.OrderBy,
+) paging.FetchParams {
+	limit := defaultLimitVal
+	if page != nil && page.GetFirst() != nil && *page.GetFirst() > 0 {
+		limit = *page.GetFirst()
+	}
+
+	if limit == 0 {
+		limit = defaultLimitVal
+	}
+
+	var cursor *paging.CursorPosition
+	if page != nil && page.GetAfter() != nil && encoder != nil {
+		cursor, _ = encoder.Decode(*page.GetAfter())
+	}
+
+	if len(orderBy) == 0 {
+		orderBy = buildOrderBy(page)
+	}
+
+	return paging.FetchParams{
+		Limit:   limit + 1,
+		Cursor:  cursor,
+		OrderBy: orderBy,
+	}
+}
+
 // GetPageInfo returns the PageInfo for this paginator.
 // PageInfo contains functions to retrieve pagination metadata like
 // cursors and whether next/previous pages exist.

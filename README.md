@@ -221,32 +221,20 @@ func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*pagi
   sqlboiler.CursorToQueryMods, // Use cursor strategy
  )
 
- // 3. Decode cursor from PageArgs
- var cursorPos *paging.CursorPosition
- if page != nil && page.After != nil {
-  cursorPos, _ = encoder.Decode(*page.After)
+ // 3. Build fetch params with automatic N+1
+ orderBy := []paging.OrderBy{
+  {Column: "created_at", Desc: true},
+  {Column: "id", Desc: true},
  }
+ fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)
 
- // 4. Fetch with pagination (N+1 pattern for accurate HasNextPage)
- limit := 10
- if page != nil && page.First != nil {
-  limit = *page.First
- }
-
- fetchParams := paging.FetchParams{
-  Limit:   limit + 1, // Fetch one extra to detect if there's a next page
-  Cursor:  cursorPos,
-  OrderBy: []paging.OrderBy{
-   {Column: "created_at", Desc: true},
-   {Column: "id", Desc: true},
-  },
- }
+ // 4. Fetch data
  users, err := fetcher.Fetch(ctx, fetchParams)
  if err != nil {
   return nil, err
  }
 
- // 5. Build connection (automatically trims to limit)
+ // 5. Build connection (automatically trims to requested limit)
  paginator := cursor.New(page, encoder, users)
  return cursor.BuildConnection(paginator, users, encoder, toDomainUser)
 }
@@ -326,23 +314,26 @@ CREATE INDEX idx_users_name_cursor ON users(name ASC, id ASC);
 
 **N+1 pattern:**
 
-Both cursor and quota-fill pagination use the N+1 pattern to detect if there's a next page:
+All three pagination strategies use the N+1 pattern internally to detect if there's a next page:
 
 1. Fetch LIMIT + 1 records from the database
 2. If you get LIMIT + 1 records, `HasNextPage = true`
 3. The paginator automatically trims to LIMIT records for the response
 
+**This is now automatic** - you don't need to manually add +1:
+
 ```go
-limit := 10
-fetchParams := paging.FetchParams{
- Limit: limit + 1,  // Fetch one extra for HasNextPage detection
- // ...
+// ✅ N+1 handled automatically!
+orderBy := []paging.OrderBy{
+ {Column: "created_at", Desc: true},
+ {Column: "id", Desc: true},
 }
+fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)  // Adds +1 internally
 users, _ := fetcher.Fetch(ctx, fetchParams)
 
-paginator := cursor.New(page, encoder, users)  // Detects N+1, trims to 10
+paginator := cursor.New(page, encoder, users)  // Detects N+1, trims to requested limit
 conn, _ := cursor.BuildConnection(paginator, users, encoder, transform)
-// conn.Nodes has 10 items, conn.PageInfo.HasNextPage() is accurate
+// conn.Nodes has the requested number of items, conn.PageInfo.HasNextPage() is accurate
 ```
 
 ### Quota-Fill Pagination
@@ -392,24 +383,12 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
  )
 
  // 3. Fetch initial batch and create base paginator
- limit := 10
- if page != nil && page.First != nil {
-  limit = *page.First
+ orderBy := []paging.OrderBy{
+  {Column: "created_at", Desc: true},
+  {Column: "id", Desc: true},
  }
+ fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)  // N+1 automatic
 
- var cursorPos *paging.CursorPosition
- if page != nil && page.After != nil {
-  cursorPos, _ = encoder.Decode(*page.After)
- }
-
- fetchParams := paging.FetchParams{
-  Limit:   limit + 1,
-  Cursor:  cursorPos,
-  OrderBy: []paging.OrderBy{
-   {Column: "created_at", Desc: true},
-   {Column: "id", Desc: true},
-  },
- }
  orgs, err := fetcher.Fetch(ctx, fetchParams)
  if err != nil {
   return nil, err
@@ -423,7 +402,7 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
  }
 
  // 5. Wrap with quota-fill
- paginator := quotafill.Wrap(basePaginator, authFilter, encoder,
+ paginator := quotafill.New(basePaginator, authFilter, encoder,
   quotafill.WithMaxIterations(5),
   quotafill.WithMaxRecordsExamined(100),
  )
@@ -489,7 +468,7 @@ Quota-fill uses Fibonacci-like multipliers `[1, 2, 3, 5, 8]` to optimize fetchin
 Three configurable safeguards prevent infinite loops and excessive load:
 
 ```go
-quotafill.Wrap(paginator, filter, encoder,
+quotafill.New(paginator, filter, encoder,
  quotafill.WithMaxIterations(5),          // Default: 5
  quotafill.WithMaxRecordsExamined(100),   // Default: 100
  quotafill.WithTimeout(5 * time.Second),  // Default: 3s
@@ -610,34 +589,6 @@ This makes it easy to add new pagination strategies or ORM adapters without chan
 - Infinite scroll / "Load More" UI
 - Data changes frequently during pagination
 - Performance is critical
-
-## Roadmap
-
-**Phase 1: Offset Pagination** ✅ Complete
-
-- Connection/Edge builders
-- Modular architecture
-- Offset pagination with page numbers
-
-**Phase 2: Cursor Pagination** ✅ Complete
-
-- High-performance keyset pagination
-- O(1) complexity regardless of page depth
-- Forward pagination (After + First)
-- Composite cursor encoding
-
-**Phase 3: Quota-Fill Pagination** ✅ Complete
-
-- Generic FilterFunc[T] interface
-- Adaptive backoff with Fibonacci multipliers
-- N+1 pattern for accurate HasNextPage
-- Safeguards: maxIterations, maxRecordsExamined, timeout
-- Metadata tracking for observability
-
-**Phase 4: Backward Pagination** (Planned)
-
-- Backward pagination (Before + Last) for cursor strategy
-- Total count estimation for quota-fill pagination
 
 ## Contributing
 

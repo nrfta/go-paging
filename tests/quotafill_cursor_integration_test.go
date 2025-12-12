@@ -39,7 +39,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a mock paginator that returns all users
-			mockPaginator := newSimpleMockPaginator(allUsers, 10)
+			mockPaginator := newSimpleMockFetcher(allUsers)
 
 			// Authorization filter that passes every other user (50% pass rate)
 			authFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
@@ -54,7 +54,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			}
 
 			// Wrap with quota-fill
-			wrapper := quotafill.Wrap(mockPaginator, authFilter, nil,
+			wrapper := quotafill.New[*models.User](mockPaginator, authFilter, nil, []paging.OrderBy{},
 				quotafill.WithMaxIterations(5),
 				quotafill.WithMaxRecordsExamined(50),
 			)
@@ -86,7 +86,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			allUsers, err := models.Users().All(ctx, container.DB)
 			Expect(err).ToNot(HaveOccurred())
 
-			mockPaginator := newSimpleMockPaginator(allUsers, 5)
+			mockPaginator := newSimpleMockFetcher(allUsers)
 
 			// Very selective filter (10% pass rate)
 			sparseFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
@@ -99,7 +99,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return authorized, nil
 			}
 
-			wrapper := quotafill.Wrap(mockPaginator, sparseFilter, nil,
+			wrapper := quotafill.New[*models.User](mockPaginator, sparseFilter, nil, []paging.OrderBy{},
 				quotafill.WithMaxIterations(5),
 				quotafill.WithMaxRecordsExamined(50),
 			)
@@ -129,7 +129,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				inactiveUsers[i].IsActive.Valid = true
 			}
 
-			mockPaginator := newSimpleMockPaginator(inactiveUsers, 10)
+			mockPaginator := newSimpleMockFetcher(inactiveUsers)
 
 			activeFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
 				active := []*models.User{}
@@ -141,7 +141,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return active, nil
 			}
 
-			wrapper := quotafill.Wrap(mockPaginator, activeFilter, nil)
+			wrapper := quotafill.New[*models.User](mockPaginator, activeFilter, nil, []paging.OrderBy{})
 
 			first := 5
 			args := &paging.PageArgs{First: &first}
@@ -165,7 +165,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			allUsers, err := models.Users().All(ctx, container.DB)
 			Expect(err).ToNot(HaveOccurred())
 
-			mockPaginator := newSimpleMockPaginator(allUsers, 10)
+			mockPaginator := newSimpleMockFetcher(allUsers)
 
 			// Composite filter: authorization + active status
 			compositeFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
@@ -188,7 +188,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return filtered, nil
 			}
 
-			wrapper := quotafill.Wrap(mockPaginator, compositeFilter, nil,
+			wrapper := quotafill.New[*models.User](mockPaginator, compositeFilter, nil, []paging.OrderBy{},
 				quotafill.WithMaxIterations(5),
 			)
 
@@ -215,8 +215,8 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			allUsers, err := models.Users().All(ctx, container.DB)
 			Expect(err).ToNot(HaveOccurred())
 
-			mockPaginator := newSimpleMockPaginator(allUsers, 5)
-			wrapper := quotafill.Wrap(mockPaginator, rejectAllUsersFilter(), nil,
+			mockPaginator := newSimpleMockFetcher(allUsers)
+			wrapper := quotafill.New[*models.User](mockPaginator, rejectAllUsersFilter(), nil, []paging.OrderBy{},
 				quotafill.WithMaxIterations(3),
 			)
 
@@ -236,7 +236,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			allUsers, err := models.Users().All(ctx, container.DB)
 			Expect(err).ToNot(HaveOccurred())
 
-			mockPaginator := newSimpleMockPaginator(allUsers, 10)
+			mockPaginator := newSimpleMockFetcher(allUsers)
 
 			// Low pass rate filter
 			lowPassFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
@@ -246,7 +246,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return []*models.User{}, nil
 			}
 
-			wrapper := quotafill.Wrap(mockPaginator, lowPassFilter, nil,
+			wrapper := quotafill.New[*models.User](mockPaginator, lowPassFilter, nil, []paging.OrderBy{},
 				quotafill.WithMaxRecordsExamined(15),
 			)
 
@@ -263,7 +263,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			allUsers, err := models.Users().All(ctx, container.DB)
 			Expect(err).ToNot(HaveOccurred())
 
-			mockPaginator := newSimpleMockPaginator(allUsers, 10)
+			mockPaginator := newSimpleMockFetcher(allUsers)
 
 			// Slow filter that sleeps to trigger timeout
 			slowFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
@@ -275,7 +275,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return []*models.User{}, nil
 			}
 
-			wrapper := quotafill.Wrap(mockPaginator, slowFilter, nil,
+			wrapper := quotafill.New[*models.User](mockPaginator, slowFilter, nil, []paging.OrderBy{},
 				quotafill.WithTimeout(100*time.Millisecond), // Very short timeout
 				quotafill.WithMaxIterations(10),              // Allow enough iterations
 			)
@@ -308,10 +308,10 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 		})
 
 		It("should paginate with cursor and filter in a single iteration", func() {
-			basePaginator := createRealCursorPaginator(encoder)
+			fetcher := createRealCursorFetcher()
 
 			// Filter passes 50% of users (even user numbers: 2,4,6,...,100)
-			wrapper := quotafill.Wrap(basePaginator, userNumFilter(2), encoder,
+			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(2), encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
 				quotafill.WithMaxIterations(5),
 			)
 
@@ -347,10 +347,10 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 		})
 
 		It("should correctly advance cursor across multiple iterations with filtering", func() {
-			basePaginator := createRealCursorPaginator(encoder)
+			fetcher := createRealCursorFetcher()
 
 			// Filter passes ~33% of users (divisible by 3: 3,6,9,...,99)
-			wrapper := quotafill.Wrap(basePaginator, userNumFilter(3), encoder,
+			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(3), encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
 				quotafill.WithMaxIterations(10),
 				quotafill.WithBackoffMultipliers([]int{1, 2, 3, 5, 8}),
 			)
@@ -399,8 +399,8 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			// Filter passes 50% (even user numbers) - enough for 10 pages of 5 items
 			evenUserFilter := userNumFilter(2)
 
-			basePaginator := createRealCursorPaginator(encoder)
-			wrapper := quotafill.Wrap(basePaginator, evenUserFilter, encoder,
+			fetcher := createRealCursorFetcher()
+			wrapper := quotafill.New[*models.User](fetcher, evenUserFilter, encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
 				quotafill.WithMaxIterations(10),
 				quotafill.WithMaxRecordsExamined(100),
 			)
@@ -428,8 +428,8 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			}
 
 			// Create new paginator for page 2 (stateless)
-			basePaginator2 := createRealCursorPaginator(encoder)
-			wrapper2 := quotafill.Wrap(basePaginator2, evenUserFilter, encoder,
+			fetcher2 := createRealCursorFetcher()
+			wrapper2 := quotafill.New[*models.User](fetcher2, evenUserFilter, encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
 				quotafill.WithMaxIterations(10),
 				quotafill.WithMaxRecordsExamined(100),
 			)
@@ -462,10 +462,10 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 		})
 
 		It("should handle sparse filtering with real cursor pagination", func() {
-			basePaginator := createRealCursorPaginator(encoder)
+			fetcher := createRealCursorFetcher()
 
 			// Sparse filter passes 10% (divisible by 10: 10,20,30,...,100)
-			wrapper := quotafill.Wrap(basePaginator, userNumFilter(10), encoder,
+			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(10), encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
 				quotafill.WithMaxIterations(8),
 				quotafill.WithMaxRecordsExamined(100),
 			)
@@ -518,58 +518,63 @@ func rejectAllUsersFilter() paging.FilterFunc[*models.User] {
 }
 
 // Simple mock paginator for integration testing
-type simpleMockPaginator[T any] struct {
-	allItems  []T
-	pageSize  int
-	offset    int
+type simpleMockFetcher[T any] struct {
+	allItems []T
+	offset   int
 }
 
-func newSimpleMockPaginator[T any](items []T, pageSize int) *simpleMockPaginator[T] {
-	return &simpleMockPaginator[T]{
+func newSimpleMockFetcher[T any](items []T) *simpleMockFetcher[T] {
+	return &simpleMockFetcher[T]{
 		allItems: items,
-		pageSize: pageSize,
 		offset:   0,
 	}
 }
 
-func (p *simpleMockPaginator[T]) Paginate(ctx context.Context, args *paging.PageArgs) (*paging.Page[T], error) {
-	pageSize := p.pageSize
-	if args != nil && args.GetFirst() != nil {
-		pageSize = *args.GetFirst()
+func (f *simpleMockFetcher[T]) Fetch(ctx context.Context, params paging.FetchParams) ([]T, error) {
+	// Use cursor position if provided, otherwise use internal offset
+	start := f.offset
+	if params.Cursor != nil {
+		if offsetVal, ok := params.Cursor.Values["offset"].(int); ok {
+			start = offsetVal
+		} else if offsetVal, ok := params.Cursor.Values["offset"].(float64); ok {
+			start = int(offsetVal)
+		}
 	}
 
-	// Calculate slice bounds
-	start := p.offset
-	end := start + pageSize
-	if end > len(p.allItems) {
-		end = len(p.allItems)
+	end := start + params.Limit
+	if end > len(f.allItems) {
+		end = len(f.allItems)
 	}
 
-	// Get items for this page
+	// Get items for this fetch
 	items := []T{}
-	if start < len(p.allItems) {
-		items = p.allItems[start:end]
+	if start < len(f.allItems) {
+		items = f.allItems[start:end]
 	}
 
-	// Update offset for next call
-	p.offset = end
+	// Update offset for next sequential fetch
+	f.offset = end
 
-	// Determine hasNextPage
-	hasNext := end < len(p.allItems)
+	return items, nil
+}
 
-	pageInfo := paging.PageInfo{
-		HasNextPage:     func() (bool, error) { return hasNext, nil },
-		HasPreviousPage: func() (bool, error) { return start > 0, nil },
-		StartCursor:     func() (*string, error) { return nil, nil },
-		EndCursor:       func() (*string, error) { return nil, nil },
-		TotalCount:      func() (*int, error) { return nil, nil },
-	}
+func (f *simpleMockFetcher[T]) Count(ctx context.Context, params paging.FetchParams) (int64, error) {
+	return int64(len(f.allItems)), nil
+}
 
-	return &paging.Page[T]{
-		Nodes:    items,
-		PageInfo: &pageInfo,
-		Metadata: paging.Metadata{},
-	}, nil
+// createRealCursorFetcher creates a real cursor-based fetcher using SQLBoiler
+// This is used for integration testing quota-fill with actual cursor pagination
+func createRealCursorFetcher() paging.Fetcher[*models.User] {
+	// Create fetcher with CursorToQueryMods strategy
+	return sqlboiler.NewFetcher(
+		func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+			return models.Users(mods...).All(ctx, container.DB)
+		},
+		func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+			return 0, nil // Count not used for cursor pagination
+		},
+		sqlboiler.CursorToQueryMods,
+	)
 }
 
 // createRealCursorPaginator creates a real cursor-based paginator using SQLBoiler

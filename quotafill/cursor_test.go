@@ -26,11 +26,11 @@ func (e *simpleCursorEncoder) Decode(cursor string) (*paging.CursorPosition, err
 func TestCursorGeneration(t *testing.T) {
 	encoder := &simpleCursorEncoder{}
 
-	basePaginator := newMockPaginator([][]testItem{
-		{{ID: 1}, {ID: 2}, {ID: 3}},
+	fetcher := newMockFetcher([]testItem{
+		{ID: 1}, {ID: 2}, {ID: 3},
 	})
 
-	wrapper := quotafill.Wrap(basePaginator, passAllFilter(), encoder)
+	wrapper := quotafill.New[testItem](fetcher, passAllFilter(), encoder, []paging.OrderBy{})
 	
 	first := 2
 	args := &paging.PageArgs{First: &first}
@@ -66,11 +66,11 @@ func TestCursorGeneration(t *testing.T) {
 }
 
 func TestCursorNilForOffset(t *testing.T) {
-	basePaginator := newMockPaginator([][]testItem{
-		{{ID: 1}, {ID: 2}},
+	fetcher := newMockFetcher([]testItem{
+		{ID: 1}, {ID: 2},
 	})
 
-	wrapper := quotafill.Wrap(basePaginator, passAllFilter(), nil)
+	wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil, []paging.OrderBy{})
 	
 	first := 2
 	args := &paging.PageArgs{First: &first}

@@ -24,6 +24,7 @@ This guide helps you migrate from go-paging v0.3.0 to the new v1.0 modular archi
 - ✨ Generic `Connection[T]` and `Edge[T]` types
 - ✨ Type-safe transformations with automatic error handling
 - ✨ Modular architecture with cursor and quota-fill pagination support
+- ✨ **Automatic N+1 pattern** - No more manual `limit + 1` with `cursor.BuildFetchParams()`
 
 ## Overview
 
@@ -321,6 +322,54 @@ offsetValue := offset.DecodeCursor(cursor)
 
 **Note:** Most users don't need to call these functions directly - the paginator and `BuildConnection()` handle cursor encoding/decoding automatically. You only need these if you're manually building cursors for testing or custom pagination logic.
 
+## New: Automatic N+1 Pattern for Cursor Pagination
+
+v1.0 introduces `cursor.BuildFetchParams()` which automatically handles the N+1 pattern, eliminating the need to manually add +1 to your limit.
+
+**Before (Manual N+1):**
+
+```go
+// ❌ Had to remember to add +1 manually
+limit := 10
+if page != nil && page.First != nil {
+    limit = *page.First
+}
+
+var cursorPos *paging.CursorPosition
+if page != nil && page.After != nil {
+    cursorPos, _ = encoder.Decode(*page.After)
+}
+
+fetchParams := paging.FetchParams{
+    Limit:   limit + 1,  // Manual N+1
+    Cursor:  cursorPos,
+    OrderBy: []paging.OrderBy{
+        {Column: "created_at", Desc: true},
+        {Column: "id", Desc: true},
+    },
+}
+users, _ := fetcher.Fetch(ctx, fetchParams)
+```
+
+**After (Automatic N+1):**
+
+```go
+// ✅ N+1 handled automatically!
+orderBy := []paging.OrderBy{
+    {Column: "created_at", Desc: true},
+    {Column: "id", Desc: true},
+}
+fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)
+users, _ := fetcher.Fetch(ctx, fetchParams)
+```
+
+This makes cursor pagination consistent with offset and quota-fill pagination, where N+1 is handled internally. The function:
+
+- Extracts the requested limit from PageArgs (defaults to 50)
+- Automatically adds +1 for HasNextPage detection
+- Decodes the After cursor
+- Returns ready-to-use FetchParams
+
 ## Advanced: Generic Connection Types
 
 v1.0 introduces generic `Connection[T]` and `Edge[T]` types:
@@ -412,25 +461,3 @@ If you encounter issues during migration, please:
 2. Review the [README.md](./README.md) for examples
 3. Check the test files for usage patterns
 4. Open an issue on GitHub with your specific use case
-
-## What's New in v1.0
-
-**Phase 1: Offset Pagination** ✅ Complete
-
-- Connection/Edge builders
-- Modular architecture
-- Offset pagination with page numbers
-
-**Phase 2: Cursor Pagination** ✅ Complete
-
-- High-performance keyset pagination
-- O(1) complexity regardless of page depth
-- Same `BuildConnection()` pattern
-- Composite cursor encoding
-
-**Phase 3: Quota-Fill Pagination** ✅ Complete
-
-- Authorization-aware filtering
-- Consistent page sizes with per-item filtering
-- Works with cursor or offset strategies
-- Adaptive backoff and safeguards

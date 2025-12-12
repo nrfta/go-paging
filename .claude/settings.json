@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(gh api:*)",
+      "Bash(gh pr view:*)",
+      "Bash(git add:*)",
+      "Bash(git log:*)",
+      "Bash(go build:*)",
+      "Bash(go generate:*)",
+      "Bash(go list:*)",
+      "Bash(go run:*)",
+      "Bash(go test:*)",
+      "Bash(go mod:*)",
+      "Bash(go doc:*)"
+    ],
+    "deny": []
+  }
+}

@@ -213,7 +213,7 @@ func BuildConnection[From any, To any](
 	paginator Paginator,
 	items []From,
 	encoder paging.CursorEncoder[From],
-	transform func(From) (*To, error),
+	transform func(From) (To, error),
 ) (*paging.Connection[To], error) {
 	// N+1 pattern: Trim items to the requested limit
 	// If caller fetched LIMIT+1, we only want to return LIMIT items in the connection

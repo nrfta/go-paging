@@ -132,7 +132,7 @@ func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*User
 **After (BuildConnection - 1 line!):**
 
 ```go
-func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[User], error) {
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
     totalCount, _ := models.Users().Count(ctx, r.DB)
     paginator := offset.New(page, totalCount)
 
@@ -242,7 +242,7 @@ import (
     "github.com/my-user/my-app/models"
 )
 
-func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[models.User], error) {
+func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[*models.User], error) {
     // Get total count
     totalCount, err := models.Users().Count(ctx, db)
     if err != nil {
@@ -273,7 +273,7 @@ type DomainUser struct {
     FullName string
 }
 
-func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[DomainUser], error) {
+func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[*DomainUser], error) {
     totalCount, _ := models.Users().Count(ctx, db)
     paginator := offset.New(pageArgs, totalCount)
     dbUsers, _ := models.Users(paginator.QueryMods()...).All(ctx, db)
@@ -378,13 +378,13 @@ v1.0 introduces generic `Connection[T]` and `Edge[T]` types:
 // Built-in generic types
 type Connection[T any] struct {
     Edges    []Edge[T]
-    Nodes    []*T
+    Nodes    []T
     PageInfo PageInfo
 }
 
 type Edge[T any] struct {
     Cursor string
-    Node   *T
+    Node   T
 }
 ```
 

@@ -105,7 +105,7 @@ import (
  "github.com/my-user/my-app/models"
 )
 
-func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[User], error) {
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
  // Get total count
  totalCount, err := models.Users().Count(ctx, r.DB)
  if err != nil {
@@ -197,7 +197,7 @@ import (
  "github.com/nrfta/go-paging/sqlboiler"
 )
 
-func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[User], error) {
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
  // 1. Create encoder (defines cursor structure)
  encoder := cursor.NewCompositeCursorEncoder(func(u *models.User) map[string]any {
   return map[string]any{
@@ -362,7 +362,7 @@ import (
  "github.com/nrfta/go-paging/quotafill"
 )
 
-func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs) (*paging.Connection[Organization], error) {
+func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*Organization], error) {
  // 1. Create base paginator (cursor or offset)
  encoder := cursor.NewCompositeCursorEncoder(func(o *models.Organization) map[string]any {
   return map[string]any{"created_at": o.CreatedAt, "id": o.ID}
@@ -419,7 +419,7 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
  }
 
  // 8. Build connection
- edges := make([]*paging.Edge[Organization], len(result.Nodes))
+ edges := make([]*paging.Edge[*Organization], len(result.Nodes))
  nodes := make([]*Organization, len(result.Nodes))
  for i, org := range result.Nodes {
   domain, err := toDomainOrg(org)
@@ -427,14 +427,14 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
    return nil, err
   }
   cursor, _ := encoder.Encode(org)
-  edges[i] = &paging.Edge[Organization]{
+  edges[i] = &paging.Edge[*Organization]{
    Cursor: *cursor,
    Node:   domain,
   }
   nodes[i] = domain
  }
 
- return &paging.Connection[Organization]{
+ return &paging.Connection[*Organization]{
   Edges:    edges,
   Nodes:    nodes,
   PageInfo: result.PageInfo,

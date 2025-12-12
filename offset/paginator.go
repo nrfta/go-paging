@@ -161,7 +161,7 @@ func (p *Paginator) GetOrderBy() string {
 func BuildConnection[From any, To any](
 	paginator Paginator,
 	items []From,
-	transform func(From) (*To, error),
+	transform func(From) (To, error),
 ) (*paging.Connection[To], error) {
 	return paging.BuildConnection(
 		items,

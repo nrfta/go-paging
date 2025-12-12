@@ -1,0 +1,21 @@
+# SQLBoiler configuration for go-paging test models
+output = "tests/models"
+pkgname = "models"
+wipe = true
+no-tests = true
+no-hooks = true
+no-auto-timestamps = true
+
+[psql]
+  dbname = "go_paging_test"
+  host = "host.docker.internal"
+  port = 5432
+  user = "postgres"
+  pass = "pgpassword"
+  sslmode = "disable"
+
+  # Schema to generate from
+  schema = "public"
+
+  # Use snake_case for Go field names
+  # This matches our database column naming

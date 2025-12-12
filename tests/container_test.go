@@ -20,19 +20,6 @@ type Container struct {
 }
 
 // SetupPostgres starts a PostgreSQL container with initialized tables.
-// The database is ready to use with SQLBoiler models.
-//
-// Example usage:
-//
-//	// Start container
-//	container, err := testing.SetupPostgres(ctx)
-//	if err != nil {
-//	    panic(err)
-//	}
-//	defer container.Terminate(ctx)
-//
-//	// Use database
-//	users, err := models.Users().All(ctx, container.DB)
 func SetupPostgres(ctx context.Context) (*Container, error) {
 	// Start PostgreSQL container
 	pgContainer, err := postgres.Run(ctx,
@@ -85,7 +72,6 @@ func SetupPostgres(ctx context.Context) (*Container, error) {
 }
 
 // Terminate stops and removes the PostgreSQL container.
-// This should be called in test cleanup (typically in AfterSuite or defer).
 func (c *Container) Terminate(ctx context.Context) error {
 	if c.DB != nil {
 		c.DB.Close()

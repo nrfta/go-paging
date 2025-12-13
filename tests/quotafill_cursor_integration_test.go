@@ -355,7 +355,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 
 			// Request 5 items (will require multiple iterations with ~30% pass rate)
 			first := 5
-			args := &paging.PageArgs{First: &first}
+			args := paging.WithSortBy(&paging.PageArgs{First: &first}, "created_at", true)
 			page, err := wrapper.Paginate(ctx, args)
 
 			Expect(err).ToNot(HaveOccurred())
@@ -374,7 +374,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(endCursor).ToNot(BeNil())
 
-			enc, err := userSchema.EncoderFor(&paging.PageArgs{})
+			enc, err := userSchema.EncoderFor(args)
 			Expect(err).ToNot(HaveOccurred())
 			cursorPos, err := enc.Decode(*endCursor)
 			Expect(err).ToNot(HaveOccurred())
@@ -407,7 +407,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 
 			// PAGE 1: Request 5 items
 			first := 5
-			page1Args := &paging.PageArgs{First: &first}
+			page1Args := paging.WithSortBy(&paging.PageArgs{First: &first}, "created_at", true)
 			page1, err := wrapper.Paginate(ctx, page1Args)
 
 			Expect(err).ToNot(HaveOccurred())
@@ -422,10 +422,10 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(endCursor1).ToNot(BeNil())
 
 			// PAGE 2: Request next 5 items using cursor from page 1
-			page2Args := &paging.PageArgs{
+			page2Args := paging.WithSortBy(&paging.PageArgs{
 				First: &first,
 				After: endCursor1,
-			}
+			}, "created_at", true)
 
 			// Create new paginator for page 2 (stateless)
 			fetcher2 := createRealCursorFetcher()

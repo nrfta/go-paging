@@ -75,10 +75,7 @@ var _ = Describe("Paginator", func() {
 	})
 
 	Describe("Order By", func() {
-		var (
-			pa   *paging.PageArgs
-			cols []string
-		)
+		var pa *paging.PageArgs
 
 		BeforeEach(func() {
 			first := 0
@@ -87,7 +84,6 @@ var _ = Describe("Paginator", func() {
 				After: &after,
 				First: &first,
 			}
-			cols = []string{"col1", "col2"}
 		})
 
 		Describe("Default", func() {
@@ -98,19 +94,25 @@ var _ = Describe("Paginator", func() {
 			})
 		})
 
-		Describe("Desc Flag & Cols", func() {
-			Describe("Desc = true", func() {
+		Describe("Multiple Columns", func() {
+			Describe("With DESC", func() {
 				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithSortBy(pa, true, cols...)
+					pa = paging.WithMultiSort(pa,
+						paging.OrderBy{Column: "col1", Desc: true},
+						paging.OrderBy{Column: "col2", Desc: true},
+					)
 					sut := offset.New(pa, 5)
 
-					Expect(sut.GetOrderBy()).To(Equal("col1, col2 DESC"))
+					Expect(sut.GetOrderBy()).To(Equal("col1 DESC, col2 DESC"))
 				})
 			})
 
-			Describe("Desc = false", func() {
+			Describe("With ASC", func() {
 				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithSortBy(pa, false, cols...)
+					pa = paging.WithMultiSort(pa,
+						paging.OrderBy{Column: "col1", Desc: false},
+						paging.OrderBy{Column: "col2", Desc: false},
+					)
 					sut := offset.New(pa, 5)
 
 					Expect(sut.GetOrderBy()).To(Equal("col1, col2"))
@@ -118,19 +120,19 @@ var _ = Describe("Paginator", func() {
 			})
 		})
 
-		Describe("Desc Flag only", func() {
-			Describe("Desc = true", func() {
+		Describe("Single Column", func() {
+			Describe("With DESC", func() {
 				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithSortBy(pa, true)
+					pa = paging.WithSortBy(pa, "created_at", true)
 					sut := offset.New(pa, 5)
 
 					Expect(sut.GetOrderBy()).To(Equal("created_at DESC"))
 				})
 			})
 
-			Describe("Desc = false", func() {
+			Describe("With ASC", func() {
 				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithSortBy(pa, false)
+					pa = paging.WithSortBy(pa, "created_at", false)
 					sut := offset.New(pa, 5)
 
 					Expect(sut.GetOrderBy()).To(Equal("created_at"))

@@ -24,12 +24,11 @@ const defaultLimitVal = 50
 // PageArgs represents pagination arguments.
 // This is a subset of the main PageArgs type to avoid import cycles.
 // Implementations should provide the page size (First), cursor position (After),
-// and sorting configuration (SortByCols, IsDesc).
+// and sorting configuration (SortBy).
 type PageArgs interface {
 	GetFirst() *int
 	GetAfter() *string
-	SortByCols() []string
-	IsDesc() bool
+	GetSortBy() []paging.OrderBy
 }
 
 // Paginator is the paginator for offset-based pagination.
@@ -79,12 +78,17 @@ func New(
 	}
 
 	orderBy := "created_at"
-	if page != nil && len(page.SortByCols()) > 0 {
-		orderBy = strings.Join(page.SortByCols(), ", ")
-	}
-
-	if page != nil && page.IsDesc() {
-		orderBy = orderBy + " DESC"
+	if page != nil && len(page.GetSortBy()) > 0 {
+		// Build ORDER BY from sort specifications
+		var parts []string
+		for _, sort := range page.GetSortBy() {
+			part := sort.Column
+			if sort.Desc {
+				part += " DESC"
+			}
+			parts = append(parts, part)
+		}
+		orderBy = strings.Join(parts, ", ")
 	}
 
 	pageInfo := newOffsetBasedPageInfo(&limit, totalCount, offset)

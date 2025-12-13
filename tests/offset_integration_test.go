@@ -162,7 +162,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 
 			// Sort by email
 			first := 5
-			pageArgs := paging.WithSortBy(&paging.PageArgs{First: &first}, false, "email")
+			pageArgs := paging.WithSortBy(&paging.PageArgs{First: &first}, "email", false)
 			paginator := offset.New(pageArgs, totalCount)
 
 			fetcher := createUserFetcher()

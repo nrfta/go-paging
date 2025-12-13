@@ -8,62 +8,68 @@ import (
 )
 
 var _ = Describe("PageArgs", func() {
-	var (
-		pa   *paging.PageArgs
-		cols []string
-	)
+	var pa *paging.PageArgs
 
 	BeforeEach(func() {
-		first := 0
-		after := "after"
+		first := 10
+		after := "cursor123"
 		pa = &paging.PageArgs{
-			After: &after,
 			First: &first,
+			After: &after,
 		}
-		cols = []string{"col1", "col2"}
 	})
 
 	It("should have zero values for basic PageArgs", func() {
-		Expect(pa.SortByCols()).To(BeNil())
-		Expect(pa.IsDesc()).To(BeFalse())
+		Expect(pa.GetSortBy()).To(BeNil())
 	})
 
 	Describe("WithSortBy", func() {
 		It("should handle a nil PageArgs arg", func() {
-			pa := paging.WithSortBy(nil, true, "col1")
+			pa := paging.WithSortBy(nil, "created_at", true)
 			Expect(pa).ToNot(BeNil())
+			Expect(pa.GetSortBy()).To(HaveLen(1))
+			Expect(pa.GetSortBy()[0].Column).To(Equal("created_at"))
+			Expect(pa.GetSortBy()[0].Desc).To(BeTrue())
 		})
 
-		Describe("Desc = true", func() {
-			It("should set the PageArgs fields", func() {
-				pa = paging.WithSortBy(pa, true, cols...)
+		It("should set single sort field with DESC", func() {
+			pa = paging.WithSortBy(pa, "name", true)
 
-				Expect(pa.IsDesc()).To(BeTrue())
-				Expect(pa.SortByCols()).To(ContainElements(cols))
-			})
+			Expect(pa.GetSortBy()).To(HaveLen(1))
+			Expect(pa.GetSortBy()[0].Column).To(Equal("name"))
+			Expect(pa.GetSortBy()[0].Desc).To(BeTrue())
 		})
 
-		Describe("Desc = false", func() {
-			It("should set the PageArgs fields", func() {
-				pa = paging.WithSortBy(pa, false, cols...)
+		It("should set single sort field with ASC", func() {
+			pa = paging.WithSortBy(pa, "email", false)
 
-				Expect(pa.IsDesc()).To(BeFalse())
-				Expect(pa.SortByCols()).To(ContainElements(cols))
-			})
+			Expect(pa.GetSortBy()).To(HaveLen(1))
+			Expect(pa.GetSortBy()[0].Column).To(Equal("email"))
+			Expect(pa.GetSortBy()[0].Desc).To(BeFalse())
+		})
+	})
+
+	Describe("WithMultiSort", func() {
+		It("should handle a nil PageArgs arg", func() {
+			pa := paging.WithMultiSort(nil,
+				paging.OrderBy{Column: "created_at", Desc: true},
+				paging.OrderBy{Column: "id", Desc: false},
+			)
+			Expect(pa).ToNot(BeNil())
+			Expect(pa.GetSortBy()).To(HaveLen(2))
 		})
 
-		Describe("Desc flag only", func() {
-			It("should set isDesc to true", func() {
-				pa = paging.WithSortBy(pa, true)
+		It("should set multiple sort fields with different directions", func() {
+			pa = paging.WithMultiSort(pa,
+				paging.OrderBy{Column: "created_at", Desc: true},
+				paging.OrderBy{Column: "name", Desc: false},
+				paging.OrderBy{Column: "id", Desc: true},
+			)
 
-				Expect(pa.IsDesc()).To(BeTrue())
-			})
-
-			It("should set isDesc to false", func() {
-				pa = paging.WithSortBy(pa, false)
-
-				Expect(pa.IsDesc()).To(BeFalse())
-			})
+			Expect(pa.GetSortBy()).To(HaveLen(3))
+			Expect(pa.GetSortBy()[0]).To(Equal(paging.OrderBy{Column: "created_at", Desc: true}))
+			Expect(pa.GetSortBy()[1]).To(Equal(paging.OrderBy{Column: "name", Desc: false}))
+			Expect(pa.GetSortBy()[2]).To(Equal(paging.OrderBy{Column: "id", Desc: true}))
 		})
 	})
 })

@@ -36,7 +36,7 @@ var _ = Describe("Schema", func() {
 	Describe("EncoderFor", func() {
 		It("should accept valid sort fields", func() {
 			pageArgs := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "name", Desc: true},
 				},
 			}
@@ -49,7 +49,7 @@ var _ = Describe("Schema", func() {
 
 		It("should accept multiple valid sort fields", func() {
 			pageArgs := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "name", Desc: false},
 				},
@@ -63,7 +63,7 @@ var _ = Describe("Schema", func() {
 
 		It("should reject invalid sort fields", func() {
 			pageArgs := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "invalid_field", Desc: true},
 				},
 			}
@@ -84,7 +84,7 @@ var _ = Describe("Schema", func() {
 
 		It("should work with empty SortBy", func() {
 			pageArgs := &paging.PageArgs{
-				SortBy: []paging.OrderBy{},
+				SortBy: []paging.Sort{},
 			}
 
 			encoder, err := schema.EncoderFor(pageArgs)
@@ -96,7 +96,7 @@ var _ = Describe("Schema", func() {
 
 	Describe("BuildOrderBy", func() {
 		It("should prepend fixed fields that come before user-sortable fields", func() {
-			userSorts := []paging.OrderBy{
+			userSorts := []paging.Sort{
 				{Column: "name", Desc: true},
 			}
 
@@ -112,7 +112,7 @@ var _ = Describe("Schema", func() {
 		})
 
 		It("should append fixed fields that come after user-sortable fields", func() {
-			userSorts := []paging.OrderBy{
+			userSorts := []paging.Sort{
 				{Column: "email", Desc: false},
 			}
 
@@ -125,7 +125,7 @@ var _ = Describe("Schema", func() {
 		})
 
 		It("should handle multiple user sorts", func() {
-			userSorts := []paging.OrderBy{
+			userSorts := []paging.Sort{
 				{Column: "created_at", Desc: true},
 				{Column: "name", Desc: false},
 			}
@@ -140,7 +140,7 @@ var _ = Describe("Schema", func() {
 		})
 
 		It("should handle empty user sorts", func() {
-			userSorts := []paging.OrderBy{}
+			userSorts := []paging.Sort{}
 
 			orderBy := schema.BuildOrderBy(userSorts)
 
@@ -167,7 +167,7 @@ var _ = Describe("Schema", func() {
 			}
 
 			pageArgs := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "name", Desc: true},
 				},
 			}
@@ -234,7 +234,7 @@ var _ = Describe("Schema", func() {
 		It("should support changing sort field at runtime", func() {
 			// First query: Sort by name
 			pageArgs1 := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "name", Desc: true},
 				},
 			}
@@ -247,7 +247,7 @@ var _ = Describe("Schema", func() {
 
 			// Second query: Sort by email
 			pageArgs2 := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "email", Desc: false},
 				},
 			}
@@ -284,7 +284,7 @@ var _ = Describe("Schema", func() {
 				})
 
 			pageArgs := &paging.PageArgs{
-				SortBy: []paging.OrderBy{
+				SortBy: []paging.Sort{
 					{Column: "users.name", Desc: false},
 				},
 			}
@@ -337,7 +337,7 @@ var _ = Describe("Schema", func() {
 			encoder, err := fixedOnlySchema.EncoderFor(nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			orderBy := fixedOnlySchema.BuildOrderBy([]paging.OrderBy{})
+			orderBy := fixedOnlySchema.BuildOrderBy([]paging.Sort{})
 			Expect(orderBy).To(HaveLen(3))
 			Expect(orderBy[0].Column).To(Equal("tenant_id"))
 			Expect(orderBy[1].Column).To(Equal("created_at"))

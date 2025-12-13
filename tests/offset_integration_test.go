@@ -60,7 +60,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
 				Limit:   paginator.Limit,
-				OrderBy: []paging.OrderBy{{Column: "created_at", Desc: true}},
+				OrderBy: []paging.Sort{{Column: "created_at", Desc: true}},
 			}
 			users, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
@@ -102,7 +102,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
 				Limit:   paginator.Limit,
-				OrderBy: []paging.OrderBy{{Column: "created_at", Desc: true}},
+				OrderBy: []paging.Sort{{Column: "created_at", Desc: true}},
 			}
 			users, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
@@ -137,7 +137,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
 				Limit:   paginator.Limit,
-				OrderBy: []paging.OrderBy{{Column: "created_at", Desc: true}},
+				OrderBy: []paging.Sort{{Column: "created_at", Desc: true}},
 			}
 			users, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
@@ -170,7 +170,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
 				Limit:   paginator.Limit,
-				OrderBy: []paging.OrderBy{{Column: "email", Desc: false}},
+				OrderBy: []paging.Sort{{Column: "email", Desc: false}},
 			}
 			users, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
@@ -209,7 +209,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 				fetchParams := paging.FetchParams{
 					Offset:  paginator.Offset,
 					Limit:   paginator.Limit,
-					OrderBy: []paging.OrderBy{{Column: "created_at", Desc: true}},
+					OrderBy: []paging.Sort{{Column: "created_at", Desc: true}},
 				}
 				users, err := fetcher.Fetch(ctx, fetchParams)
 				Expect(err).ToNot(HaveOccurred())
@@ -257,7 +257,7 @@ var _ = Describe("Offset Pagination Integration Tests", func() {
 			fetchParams := paging.FetchParams{
 				Offset:  paginator.Offset,
 				Limit:   paginator.Limit,
-				OrderBy: []paging.OrderBy{{Column: "published_at", Desc: true}},
+				OrderBy: []paging.Sort{{Column: "published_at", Desc: true}},
 			}
 			posts, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())

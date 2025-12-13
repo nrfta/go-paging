@@ -56,7 +56,7 @@ var _ = Describe("Paginator", func() {
 			page := &paging.PageArgs{
 				First: &first,
 				After: cursorStr,
-				SortBy: []paging.OrderBy{{Column: "created_at", Desc: true}},
+				SortBy: []paging.Sort{{Column: "created_at", Desc: true}},
 			}
 
 			paginator, err := cursor.New(page, schema, users)
@@ -233,8 +233,8 @@ var _ = Describe("Paginator", func() {
 
 		It("should support multiple user-sortable columns", func() {
 			page := paging.WithMultiSort(&paging.PageArgs{},
-				paging.OrderBy{Column: "name", Desc: false},
-				paging.OrderBy{Column: "email", Desc: true},
+				paging.Sort{Column: "name", Desc: false},
+				paging.Sort{Column: "email", Desc: true},
 			)
 
 			paginator, err := cursor.New(page, schema, users)

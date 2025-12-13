@@ -132,7 +132,7 @@ func (s *Schema[T]) FixedField(name string, direction Direction, cursorKey strin
 //
 // Returns an error if any sort field is invalid.
 func (s *Schema[T]) EncoderFor(pageArgs PageArgs) (paging.CursorEncoder[T], error) {
-	var sortFields []paging.OrderBy
+	var sortFields []paging.Sort
 
 	// Validate user's sort choices
 	if pageArgs != nil && pageArgs.GetSortBy() != nil {
@@ -165,8 +165,8 @@ func (s *Schema[T]) EncoderFor(pageArgs PageArgs) (paging.CursorEncoder[T], erro
 //
 //	BuildOrderBy([{Column: "name", Desc: true}])
 //	// Returns: [tenant_id ASC, name DESC, id DESC]
-func (s *Schema[T]) BuildOrderBy(userSorts []paging.OrderBy) []paging.OrderBy {
-	result := make([]paging.OrderBy, 0)
+func (s *Schema[T]) BuildOrderBy(userSorts []paging.Sort) []paging.Sort {
+	result := make([]paging.Sort, 0)
 
 	// Add fixed fields in declaration order, respecting their position relative to user-sortable fields
 	// We need to:
@@ -189,7 +189,7 @@ func (s *Schema[T]) BuildOrderBy(userSorts []paging.OrderBy) []paging.OrderBy {
 	// Special case: No user-sortable fields registered (only fixed fields)
 	if firstSortablePos == -1 {
 		for _, spec := range s.fixedFields {
-			result = append(result, paging.OrderBy{
+			result = append(result, paging.Sort{
 				Column: spec.name,
 				Desc:   bool(*spec.direction),
 			})
@@ -200,7 +200,7 @@ func (s *Schema[T]) BuildOrderBy(userSorts []paging.OrderBy) []paging.OrderBy {
 	// Add fixed fields that come before first sortable field (prepended)
 	for _, spec := range s.fixedFields {
 		if spec.position < firstSortablePos {
-			result = append(result, paging.OrderBy{
+			result = append(result, paging.Sort{
 				Column: spec.name,
 				Desc:   bool(*spec.direction),
 			})
@@ -213,7 +213,7 @@ func (s *Schema[T]) BuildOrderBy(userSorts []paging.OrderBy) []paging.OrderBy {
 	// Add fixed fields that come after last sortable field (appended)
 	for _, spec := range s.fixedFields {
 		if spec.position > lastSortablePos {
-			result = append(result, paging.OrderBy{
+			result = append(result, paging.Sort{
 				Column: spec.name,
 				Desc:   bool(*spec.direction),
 			})
@@ -227,7 +227,7 @@ func (s *Schema[T]) BuildOrderBy(userSorts []paging.OrderBy) []paging.OrderBy {
 // It implements CursorEncoder[T] and ensures encoder/OrderBy matching.
 type Spec[T any] struct {
 	schema      *Schema[T]
-	sortFields  []paging.OrderBy  // User's chosen sorts
+	sortFields  []paging.Sort     // User's chosen sorts
 	fixedFields []*fieldSpec[T]   // Schema's fixed fields
 }
 

@@ -30,7 +30,7 @@ var _ = Describe("CursorToQueryMods", func() {
 
 		It("should add ORDER BY mod", func() {
 			params := paging.FetchParams{
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -51,7 +51,7 @@ var _ = Describe("CursorToQueryMods", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -74,7 +74,7 @@ var _ = Describe("CursorToQueryMods", func() {
 			params := paging.FetchParams{
 				Limit:  10,
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -93,7 +93,7 @@ var _ = Describe("CursorToQueryMods", func() {
 		It("should handle nil cursor gracefully", func() {
 			params := paging.FetchParams{
 				Cursor: nil,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 				},
 			}
@@ -111,7 +111,7 @@ var _ = Describe("CursorToQueryMods", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 				},
 			}
@@ -132,7 +132,7 @@ var _ = Describe("CursorToQueryMods", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true}, // This column is missing in cursor
 				},
@@ -158,7 +158,7 @@ var _ = Describe("KeysetWhereClause", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -179,7 +179,7 @@ var _ = Describe("KeysetWhereClause", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "name", Desc: false},
 					{Column: "id", Desc: false},
 				},
@@ -200,7 +200,7 @@ var _ = Describe("KeysetWhereClause", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "id", Desc: false},
 				},
 			}
@@ -222,7 +222,7 @@ var _ = Describe("KeysetWhereClause", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "name", Desc: false},
 					{Column: "id", Desc: false},
@@ -251,7 +251,7 @@ var _ = Describe("ConvertValueForSQL", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -275,7 +275,7 @@ var _ = Describe("ConvertValueForSQL", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -297,7 +297,7 @@ var _ = Describe("ConvertValueForSQL", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "age", Desc: false},
 					{Column: "id", Desc: false},
 				},
@@ -319,7 +319,7 @@ var _ = Describe("ConvertValueForSQL", func() {
 
 			params := paging.FetchParams{
 				Cursor: cursor,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "score", Desc: true},
 					{Column: "id", Desc: false},
 				},

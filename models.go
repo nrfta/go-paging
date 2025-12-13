@@ -4,9 +4,9 @@ package paging
 // It follows the Relay cursor pagination specification with First (page size),
 // After (cursor), and SortBy (sort configuration) fields.
 type PageArgs struct {
-	First  *int      `json:"first,omitempty"`
-	After  *string   `json:"after,omitempty"`
-	SortBy []OrderBy `json:"sortBy,omitempty"`
+	First  *int    `json:"first,omitempty"`
+	After  *string `json:"after,omitempty"`
+	SortBy []Sort  `json:"sortBy,omitempty"`
 }
 
 // WithSortBy configures a single sort column and direction for pagination.
@@ -22,7 +22,7 @@ func WithSortBy(pa *PageArgs, column string, desc bool) *PageArgs {
 		pa = &PageArgs{}
 	}
 
-	pa.SortBy = []OrderBy{{Column: column, Desc: desc}}
+	pa.SortBy = []Sort{{Column: column, Desc: desc}}
 	return pa
 }
 
@@ -33,11 +33,11 @@ func WithSortBy(pa *PageArgs, column string, desc bool) *PageArgs {
 // Example:
 //
 //	args := WithMultiSort(nil,
-//	    OrderBy{Column: "created_at", Desc: true},
-//	    OrderBy{Column: "name", Desc: false},
+//	    Sort{Column: "created_at", Desc: true},
+//	    Sort{Column: "name", Desc: false},
 //	)
 //	// Results in ORDER BY created_at DESC, name ASC
-func WithMultiSort(pa *PageArgs, sorts ...OrderBy) *PageArgs {
+func WithMultiSort(pa *PageArgs, sorts ...Sort) *PageArgs {
 	if pa == nil {
 		pa = &PageArgs{}
 	}
@@ -57,7 +57,7 @@ func (pa *PageArgs) GetAfter() *string {
 }
 
 // GetSortBy returns the list of sort specifications.
-func (pa *PageArgs) GetSortBy() []OrderBy {
+func (pa *PageArgs) GetSortBy() []Sort {
 	return pa.SortBy
 }
 

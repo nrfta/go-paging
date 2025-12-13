@@ -254,7 +254,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 		It("should sort by email ascending", func() {
 			first := 5
 			pageArgs := paging.WithMultiSort(&paging.PageArgs{First: &first},
-				paging.OrderBy{Column: "email", Desc: false},
+				paging.Sort{Column: "email", Desc: false},
 			)
 
 			fetcher := createUserFetcher()
@@ -798,7 +798,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			fetchParams := paging.FetchParams{
 				Limit:  10 + 1,
 				Cursor: nil,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true}, // UNQUALIFIED - ambiguous!
 					{Column: "id", Desc: true},         // UNQUALIFIED - ambiguous!
 				},

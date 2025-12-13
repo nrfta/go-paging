@@ -15,7 +15,7 @@ const defaultLimitVal = 50
 type PageArgs interface {
 	GetFirst() *int
 	GetAfter() *string
-	GetSortBy() []paging.OrderBy
+	GetSortBy() []paging.Sort
 }
 
 // Paginator is the paginator for cursor-based pagination.
@@ -32,7 +32,7 @@ type Paginator struct {
 	limit    int
 	cursor   *paging.CursorPosition
 	PageInfo paging.PageInfo
-	orderBy  []paging.OrderBy
+	orderBy  []paging.Sort
 	encoder  interface{} // Stored as interface{} to avoid making Paginator generic
 }
 
@@ -89,7 +89,7 @@ func New[T any](
 	}
 
 	// Build orderBy from schema (includes fixed fields)
-	var sortBy []paging.OrderBy
+	var sortBy []paging.Sort
 	if page != nil && page.GetSortBy() != nil {
 		sortBy = page.GetSortBy()
 	}
@@ -151,7 +151,7 @@ func BuildFetchParams[T any](
 	}
 
 	// Build orderBy from schema (includes fixed fields)
-	var sortBy []paging.OrderBy
+	var sortBy []paging.Sort
 	if page != nil && page.GetSortBy() != nil {
 		sortBy = page.GetSortBy()
 	}
@@ -199,7 +199,7 @@ func (p *Paginator) GetCursor() *paging.CursorPosition {
 }
 
 // GetOrderBy returns the OrderBy directives for this paginator.
-func (p *Paginator) GetOrderBy() []paging.OrderBy {
+func (p *Paginator) GetOrderBy() []paging.Sort {
 	return p.orderBy
 }
 
@@ -274,11 +274,11 @@ func BuildConnection[From any, To any](
 }
 
 // defaultOrderBy is the fallback when no sort columns are specified.
-var defaultOrderBy = []paging.OrderBy{{Column: "created_at", Desc: true}}
+var defaultOrderBy = []paging.Sort{{Column: "created_at", Desc: true}}
 
 // buildOrderBy constructs OrderBy directives from PageArgs.
 // Defaults to created_at DESC if no sort columns are specified.
-func buildOrderBy(page PageArgs) []paging.OrderBy {
+func buildOrderBy(page PageArgs) []paging.Sort {
 	if page == nil {
 		return defaultOrderBy
 	}

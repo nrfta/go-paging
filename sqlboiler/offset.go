@@ -42,17 +42,17 @@ func OffsetToQueryMods(params paging.FetchParams) []qm.QueryMod {
 	return mods
 }
 
-// buildOrderByClause constructs an ORDER BY clause from OrderBy directives.
+// buildOrderByClause constructs an ORDER BY clause from Sort directives.
 // Assumes len(orderBy) > 0 (caller must verify).
 //
 // Example:
 //
-//	[]OrderBy{
+//	[]Sort{
 //	    {Column: "created_at", Desc: true},
 //	    {Column: "id", Desc: false},
 //	}
 //	→ "created_at DESC, id"
-func buildOrderByClause(orderBy []paging.OrderBy) string {
+func buildOrderByClause(orderBy []paging.Sort) string {
 	parts := make([]string, len(orderBy))
 	for i, o := range orderBy {
 		if o.Desc {

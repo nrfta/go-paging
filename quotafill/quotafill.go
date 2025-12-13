@@ -208,9 +208,9 @@ func (w *Wrapper[T]) fetchIteration(
 	}
 
 	// Get orderBy from schema
-	var orderBy []paging.OrderBy
+	var orderBy []paging.Sort
 	if w.schema != nil {
-		var sortBy []paging.OrderBy
+		var sortBy []paging.Sort
 		if args != nil && args.GetSortBy() != nil {
 			sortBy = args.GetSortBy()
 		}

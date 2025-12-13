@@ -52,8 +52,8 @@ var _ = Describe("PageArgs", func() {
 	Describe("WithMultiSort", func() {
 		It("should handle a nil PageArgs arg", func() {
 			pa := paging.WithMultiSort(nil,
-				paging.OrderBy{Column: "created_at", Desc: true},
-				paging.OrderBy{Column: "id", Desc: false},
+				paging.Sort{Column: "created_at", Desc: true},
+				paging.Sort{Column: "id", Desc: false},
 			)
 			Expect(pa).ToNot(BeNil())
 			Expect(pa.GetSortBy()).To(HaveLen(2))
@@ -61,15 +61,15 @@ var _ = Describe("PageArgs", func() {
 
 		It("should set multiple sort fields with different directions", func() {
 			pa = paging.WithMultiSort(pa,
-				paging.OrderBy{Column: "created_at", Desc: true},
-				paging.OrderBy{Column: "name", Desc: false},
-				paging.OrderBy{Column: "id", Desc: true},
+				paging.Sort{Column: "created_at", Desc: true},
+				paging.Sort{Column: "name", Desc: false},
+				paging.Sort{Column: "id", Desc: true},
 			)
 
 			Expect(pa.GetSortBy()).To(HaveLen(3))
-			Expect(pa.GetSortBy()[0]).To(Equal(paging.OrderBy{Column: "created_at", Desc: true}))
-			Expect(pa.GetSortBy()[1]).To(Equal(paging.OrderBy{Column: "name", Desc: false}))
-			Expect(pa.GetSortBy()[2]).To(Equal(paging.OrderBy{Column: "id", Desc: true}))
+			Expect(pa.GetSortBy()[0]).To(Equal(paging.Sort{Column: "created_at", Desc: true}))
+			Expect(pa.GetSortBy()[1]).To(Equal(paging.Sort{Column: "name", Desc: false}))
+			Expect(pa.GetSortBy()[2]).To(Equal(paging.Sort{Column: "id", Desc: true}))
 		})
 	})
 })

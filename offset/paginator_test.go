@@ -98,8 +98,8 @@ var _ = Describe("Paginator", func() {
 			Describe("With DESC", func() {
 				It("should set the Paginator orderBy field", func() {
 					pa = paging.WithMultiSort(pa,
-						paging.OrderBy{Column: "col1", Desc: true},
-						paging.OrderBy{Column: "col2", Desc: true},
+						paging.Sort{Column: "col1", Desc: true},
+						paging.Sort{Column: "col2", Desc: true},
 					)
 					sut := offset.New(pa, 5)
 
@@ -110,8 +110,8 @@ var _ = Describe("Paginator", func() {
 			Describe("With ASC", func() {
 				It("should set the Paginator orderBy field", func() {
 					pa = paging.WithMultiSort(pa,
-						paging.OrderBy{Column: "col1", Desc: false},
-						paging.OrderBy{Column: "col2", Desc: false},
+						paging.Sort{Column: "col1", Desc: false},
+						paging.Sort{Column: "col2", Desc: false},
 					)
 					sut := offset.New(pa, 5)
 

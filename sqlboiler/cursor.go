@@ -69,7 +69,7 @@ func CursorToQueryMods(params paging.FetchParams) []qm.QueryMod {
 //   - ASC: use > (get records AFTER cursor)
 //
 // Returns empty string if cursor is invalid or missing required columns.
-func buildKeysetWhereClause(cursor *paging.CursorPosition, orderBy []paging.OrderBy) (string, []interface{}) {
+func buildKeysetWhereClause(cursor *paging.CursorPosition, orderBy []paging.Sort) (string, []interface{}) {
 	if cursor == nil || len(cursor.Values) == 0 || len(orderBy) == 0 {
 		return "", nil
 	}

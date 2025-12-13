@@ -28,7 +28,7 @@ const defaultLimitVal = 50
 type PageArgs interface {
 	GetFirst() *int
 	GetAfter() *string
-	GetSortBy() []paging.OrderBy
+	GetSortBy() []paging.Sort
 }
 
 // Paginator is the paginator for offset-based pagination.

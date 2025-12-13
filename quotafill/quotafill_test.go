@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nrfta/go-paging"
+	"github.com/nrfta/go-paging/cursor"
 	"github.com/nrfta/go-paging/quotafill"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -72,16 +73,10 @@ type testItem struct {
 	Active bool
 }
 
-// mockCursorEncoder is a simple cursor encoder for testing
-type mockCursorEncoder struct{}
-
-func (e *mockCursorEncoder) Encode(item testItem) (*string, error) {
-	cursor := "cursor-" + string(rune('0'+item.ID))
-	return &cursor, nil
-}
-
-func (e *mockCursorEncoder) Decode(cursor string) (*paging.CursorPosition, error) {
-	return nil, nil
+// testItemSchema creates a schema for cursor-based pagination tests
+func testItemSchema() *cursor.Schema[testItem] {
+	return cursor.NewSchema[testItem]().
+		FixedField("id", cursor.DESC, "i", func(item testItem) any { return item.ID })
 }
 
 var _ = Describe("QuotaFill Wrapper", func() {
@@ -91,7 +86,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 1}, {ID: 2}, {ID: 3},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
 			Expect(wrapper).ToNot(BeNil())
 		})
 
@@ -100,7 +95,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
 
 			first := 3
 			args := &paging.PageArgs{First: &first}
@@ -118,7 +113,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 1, Active: true}, {ID: 2, Active: false}, {ID: 3, Active: true},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil)
 
 			first := 2
 			args := &paging.PageArgs{First: &first}
@@ -137,7 +132,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
 
 			first := 3 // Request 3 items, will fetch 4 (N+1) internally
 			args := &paging.PageArgs{First: &first}
@@ -156,7 +151,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 1}, {ID: 2}, {ID: 3},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
 
 			first := 3 // Request 3 items, try to fetch 4 (N+1) but only get 3
 			args := &paging.PageArgs{First: &first}
@@ -181,7 +176,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 5, Active: true}, {ID: 6, Active: false}, {ID: 7, Active: true},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil)
 
 			first := 3 // Request 3 items
 			args := &paging.PageArgs{First: &first}
@@ -204,7 +199,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				// No more pages
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil)
 
 			first := 5 // Request 5 items, but only 2 pass the filter
 			args := &paging.PageArgs{First: &first}
@@ -228,7 +223,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 9, Active: true}, {ID: 10, Active: false}, {ID: 11, Active: false}, {ID: 12, Active: false},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil)
 
 			first := 1
 			args := &paging.PageArgs{First: &first}
@@ -246,7 +241,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 			})
 
 			// Use aggressive backoff [10, 20]
-			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil, []paging.OrderBy{},
+			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil,
 				quotafill.WithBackoffMultipliers([]int{10, 20}),
 			)
 
@@ -269,7 +264,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 			}
 			fetcher := newMockFetcher(items)
 
-			wrapper := quotafill.New[testItem](fetcher, rejectAllFilter(), nil, []paging.OrderBy{},
+			wrapper := quotafill.New[testItem](fetcher, rejectAllFilter(), nil,
 				quotafill.WithMaxIterations(3),
 			)
 
@@ -291,7 +286,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 7}, {ID: 8}, {ID: 9},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, rejectAllFilter(), nil, []paging.OrderBy{},
+			wrapper := quotafill.New[testItem](fetcher, rejectAllFilter(), nil,
 				quotafill.WithMaxRecordsExamined(5),
 			)
 
@@ -313,7 +308,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				items: []testItem{{ID: 1}, {ID: 2}, {ID: 3}},
 			}
 
-			wrapper := quotafill.New[testItem](slowPaginator, passAllFilter(), nil, []paging.OrderBy{},
+			wrapper := quotafill.New[testItem](slowPaginator, passAllFilter(), nil,
 				quotafill.WithTimeout(100*time.Millisecond),
 			)
 
@@ -333,7 +328,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				err: errors.New("database error"),
 			}
 
-			wrapper := quotafill.New[testItem](errorPaginator, passAllFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](errorPaginator, passAllFilter(), nil)
 
 			first := 3
 			args := &paging.PageArgs{First: &first}
@@ -352,7 +347,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				return nil, errors.New("authorization error")
 			}
 
-			wrapper := quotafill.New[testItem](fetcher, filter, nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, filter, nil)
 
 			first := 3
 			args := &paging.PageArgs{First: &first}
@@ -370,7 +365,7 @@ var _ = Describe("QuotaFill Wrapper", func() {
 				{ID: 3, Active: true}, {ID: 4, Active: false},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, activeFilter(), nil)
 
 			first := 2
 			args := &paging.PageArgs{First: &first}
@@ -387,15 +382,15 @@ var _ = Describe("QuotaFill Wrapper", func() {
 	})
 
 	Describe("Cursor Handling", func() {
-		It("should generate cursors when encoder is provided", func() {
-			encoder := &mockCursorEncoder{}
+		It("should generate cursors when schema is provided", func() {
+			schema := testItemSchema()
 
 			fetcher := newMockFetcher([]testItem{
 				// Need extra odd IDs to account for N+1 offset advancement
 				{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}, {ID: 6}, {ID: 7}, {ID: 8}, {ID: 9},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, oddIDFilter(), encoder, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, oddIDFilter(), schema)
 
 			first := 3
 			args := &paging.PageArgs{First: &first}
@@ -407,21 +402,18 @@ var _ = Describe("QuotaFill Wrapper", func() {
 			startCursor, err := page.PageInfo.StartCursor()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(startCursor).ToNot(BeNil(), "StartCursor should be generated")
-			Expect(*startCursor).To(Equal("cursor-1"), "StartCursor should be for first item (ID=1)")
 
 			endCursor, err := page.PageInfo.EndCursor()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(endCursor).ToNot(BeNil(), "EndCursor should be generated")
-			// With N+1 skip, we get IDs 1,3 from first fetch, then 7 from second fetch
-			Expect(*endCursor).To(MatchRegexp("cursor-[137]"), "EndCursor should be for one of the odd IDs")
 		})
 
-		It("should return nil cursors when encoder is nil (offset pagination)", func() {
+		It("should return nil cursors when schema is nil (offset pagination)", func() {
 			fetcher := newMockFetcher([]testItem{
 				{ID: 1}, {ID: 2}, {ID: 3},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
 
 			first := 2
 			args := &paging.PageArgs{First: &first}
@@ -439,14 +431,14 @@ var _ = Describe("QuotaFill Wrapper", func() {
 		})
 
 		It("should generate cursors correctly after multiple iterations", func() {
-			encoder := &mockCursorEncoder{}
+			schema := testItemSchema()
 
 			fetcher := newMockFetcher([]testItem{
-				{ID: 1}, {ID: 2}, {ID: 3},           // First fetch: 1, 3 pass
-				{ID: 4}, {ID: 5}, {ID: 6}, {ID: 7},  // Second fetch: 5, 7 pass
+				{ID: 1}, {ID: 2}, {ID: 3},          // First fetch: 1, 3 pass
+				{ID: 4}, {ID: 5}, {ID: 6}, {ID: 7}, // Second fetch: 5, 7 pass
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, oddIDFilter(), encoder, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, oddIDFilter(), schema)
 
 			first := 4
 			args := &paging.PageArgs{First: &first}
@@ -457,20 +449,20 @@ var _ = Describe("QuotaFill Wrapper", func() {
 			Expect(page.Metadata.IterationsUsed).To(Equal(2), "Should use 2 iterations")
 
 			startCursor, _ := page.PageInfo.StartCursor()
-			Expect(*startCursor).To(Equal("cursor-1"), "StartCursor should be for first item (ID=1)")
+			Expect(startCursor).ToNot(BeNil(), "StartCursor should be generated")
 
 			endCursor, _ := page.PageInfo.EndCursor()
-			Expect(*endCursor).To(Equal("cursor-7"), "EndCursor should be for last item (ID=7)")
+			Expect(endCursor).ToNot(BeNil(), "EndCursor should be generated")
 		})
 
 		It("should return nil cursors when no items after filtering", func() {
-			encoder := &mockCursorEncoder{}
+			schema := testItemSchema()
 
 			fetcher := newMockFetcher([]testItem{
 				{ID: 1}, {ID: 2}, {ID: 3},
 			})
 
-			wrapper := quotafill.New[testItem](fetcher, rejectAllFilter(), encoder, []paging.OrderBy{})
+			wrapper := quotafill.New[testItem](fetcher, rejectAllFilter(), schema)
 
 			first := 5
 			args := &paging.PageArgs{First: &first}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nrfta/go-paging"
+	"github.com/nrfta/go-paging/cursor"
 )
 
 // Default configuration values
@@ -23,8 +24,7 @@ var defaultBackoffMultipliers = []int{1, 2, 3, 5, 8}
 type Wrapper[T any] struct {
 	fetcher            paging.Fetcher[T]
 	filter             paging.FilterFunc[T]
-	encoder            paging.CursorEncoder[T]
-	orderBy            []paging.OrderBy
+	schema             *cursor.Schema[T]
 	maxIterations      int
 	maxRecordsExamined int
 	timeout            time.Duration
@@ -87,11 +87,12 @@ func getRequestedSize(args *paging.PageArgs) int {
 }
 
 // New creates a quota-fill paginator that adapts a fetcher with filtering.
+// The schema parameter provides both the cursor encoder and sort ordering,
+// ensuring they are always synchronized.
 func New[T any](
 	fetcher paging.Fetcher[T],
 	filter paging.FilterFunc[T],
-	encoder paging.CursorEncoder[T],
-	orderBy []paging.OrderBy,
+	schema *cursor.Schema[T],
 	opts ...Option,
 ) paging.Paginator[T] {
 	cfg := &config{
@@ -108,8 +109,7 @@ func New[T any](
 	return &Wrapper[T]{
 		fetcher:            fetcher,
 		filter:             filter,
-		encoder:            encoder,
-		orderBy:            orderBy,
+		schema:             schema,
 		maxIterations:      cfg.maxIterations,
 		maxRecordsExamined: cfg.maxRecordsExamined,
 		timeout:            cfg.timeout,
@@ -183,20 +183,44 @@ func (w *Wrapper[T]) fetchIteration(
 		return safeguardMaxRecords
 	}
 
+	// Get encoder from schema for the current args
 	var cursorPos *paging.CursorPosition
-	if state.currentCursor != nil && w.encoder != nil {
-		var err error
-		cursorPos, err = w.encoder.Decode(*state.currentCursor)
+	if state.currentCursor != nil && w.schema != nil {
+		// Build temporary args with current cursor for encoder
+		cursorArgs := &paging.PageArgs{}
+		if args != nil && args.GetSortBy() != nil {
+			cursorArgs = &paging.PageArgs{
+				SortBy: args.GetSortBy(),
+			}
+		}
+
+		encoder, err := w.schema.EncoderFor(cursorArgs)
+		if err != nil {
+			state.lastError = fmt.Errorf("get encoder (iteration %d): %w", state.iteration+1, err)
+			return ""
+		}
+
+		cursorPos, err = encoder.Decode(*state.currentCursor)
 		if err != nil {
 			state.lastError = fmt.Errorf("decode cursor (iteration %d): %w", state.iteration+1, err)
 			return ""
 		}
 	}
 
+	// Get orderBy from schema
+	var orderBy []paging.OrderBy
+	if w.schema != nil {
+		var sortBy []paging.OrderBy
+		if args != nil && args.GetSortBy() != nil {
+			sortBy = args.GetSortBy()
+		}
+		orderBy = w.schema.BuildOrderBy(sortBy)
+	}
+
 	fetchParams := paging.FetchParams{
 		Limit:   fetchSize,
 		Cursor:  cursorPos,
-		OrderBy: w.orderBy,
+		OrderBy: orderBy,
 	}
 
 	items, err := w.fetcher.Fetch(ctx, fetchParams)
@@ -230,9 +254,24 @@ func (w *Wrapper[T]) fetchIteration(
 		return ""
 	}
 
-	if w.encoder != nil && len(state.filteredItems) > 0 {
+	// Encode cursor from last filtered item using schema
+	if w.schema != nil && len(state.filteredItems) > 0 {
+		// Build temporary args for encoder
+		cursorArgs := &paging.PageArgs{}
+		if args != nil && args.GetSortBy() != nil {
+			cursorArgs = &paging.PageArgs{
+				SortBy: args.GetSortBy(),
+			}
+		}
+
+		encoder, err := w.schema.EncoderFor(cursorArgs)
+		if err != nil {
+			state.lastError = fmt.Errorf("get encoder for cursor (iteration %d): %w", state.iteration, err)
+			return ""
+		}
+
 		lastFilteredItem := state.filteredItems[len(state.filteredItems)-1]
-		cursor, err := w.encoder.Encode(lastFilteredItem)
+		cursor, err := encoder.Encode(lastFilteredItem)
 		if err != nil {
 			state.lastError = fmt.Errorf("encode cursor from filtered item (iteration %d): %w", state.iteration, err)
 			return ""
@@ -256,7 +295,7 @@ func (w *Wrapper[T]) buildResult(
 		resultItems = resultItems[:requestedSize]
 	}
 
-	pageInfo := buildPageInfo(args, hasNextPage, resultItems, w.encoder)
+	pageInfo := buildPageInfo(args, hasNextPage, resultItems, w.schema)
 
 	return &paging.Page[T]{
 		Nodes:    resultItems,
@@ -279,19 +318,41 @@ func buildPageInfo[T any](
 	args *paging.PageArgs,
 	hasNextPage bool,
 	items []T,
-	encoder paging.CursorEncoder[T],
+	schema *cursor.Schema[T],
 ) paging.PageInfo {
 	return paging.PageInfo{
 		TotalCount: func() (*int, error) { return nil, nil },
 		StartCursor: func() (*string, error) {
-			if encoder == nil || len(items) == 0 {
+			if schema == nil || len(items) == 0 {
 				return nil, nil
+			}
+			// Build temporary args for encoder
+			cursorArgs := &paging.PageArgs{}
+			if args != nil && args.GetSortBy() != nil {
+				cursorArgs = &paging.PageArgs{
+					SortBy: args.GetSortBy(),
+				}
+			}
+			encoder, err := schema.EncoderFor(cursorArgs)
+			if err != nil {
+				return nil, err
 			}
 			return encoder.Encode(items[0])
 		},
 		EndCursor: func() (*string, error) {
-			if encoder == nil || len(items) == 0 {
+			if schema == nil || len(items) == 0 {
 				return nil, nil
+			}
+			// Build temporary args for encoder
+			cursorArgs := &paging.PageArgs{}
+			if args != nil && args.GetSortBy() != nil {
+				cursorArgs = &paging.PageArgs{
+					SortBy: args.GetSortBy(),
+				}
+			}
+			encoder, err := schema.EncoderFor(cursorArgs)
+			if err != nil {
+				return nil, err
 			}
 			return encoder.Encode(items[len(items)-1])
 		},

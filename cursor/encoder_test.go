@@ -12,7 +12,10 @@ import (
 // testUser is a simple test struct for cursor encoding
 type testUser struct {
 	ID        string
+	Name      string
+	Email     string
 	CreatedAt time.Time
+	TenantID  int
 	Age       int
 }
 

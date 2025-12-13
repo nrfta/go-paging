@@ -13,8 +13,8 @@ import (
 
 var _ = Describe("Paginator", func() {
 	var (
-		encoder *cursor.CompositeCursorEncoder[*testUser]
-		users   []*testUser
+		schema *cursor.Schema[*testUser]
+		users  []*testUser
 	)
 
 	BeforeEach(func() {
@@ -25,36 +25,42 @@ var _ = Describe("Paginator", func() {
 			{ID: "user-3", CreatedAt: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), Age: 35},
 		}
 
-		// Create encoder
-		encoder = cursor.NewCompositeCursorEncoder(func(u *testUser) map[string]any {
-			return map[string]any{
-				"created_at": u.CreatedAt,
-				"id":         u.ID,
-			}
-		}).(*cursor.CompositeCursorEncoder[*testUser])
+		// Create schema with all sortable fields
+		schema = cursor.NewSchema[*testUser]().
+			Field("created_at", "c", func(u *testUser) any { return u.CreatedAt }).
+			Field("name", "n", func(u *testUser) any { return u.Name }).
+			Field("email", "e", func(u *testUser) any { return u.Email }).
+			FixedField("id", cursor.DESC, "i", func(u *testUser) any { return u.ID })
 	})
 
 	Describe("Basic functionality", func() {
 		It("uses the default limit when no pageArgs.First is provided", func() {
 			page := &paging.PageArgs{}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(paginator.GetLimit()).To(Equal(50))
 			Expect(paginator.GetCursor()).To(BeNil())
 		})
 
 		It("parses the pageArgs correctly", func() {
-			// Encode a cursor
+			// Create PageArgs with sort field to ensure it's in cursor
+			pageArgsForCursor := paging.WithSortBy(&paging.PageArgs{}, "created_at", true)
+
+			// Get encoder and encode a cursor
+			encoder, _ := schema.EncoderFor(pageArgsForCursor)
 			cursorStr, _ := encoder.Encode(users[0])
 
 			first := 10
 			page := &paging.PageArgs{
 				First: &first,
 				After: cursorStr,
+				SortBy: []paging.OrderBy{{Column: "created_at", Desc: true}},
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(paginator.GetLimit()).To(Equal(10))
 			Expect(paginator.GetCursor()).ToNot(BeNil())
@@ -68,7 +74,8 @@ var _ = Describe("Paginator", func() {
 				First: &first,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(paginator.GetLimit()).To(Equal(10))
 			Expect(paginator.GetCursor()).To(BeNil())
@@ -80,7 +87,8 @@ var _ = Describe("Paginator", func() {
 				First: &first,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(paginator.GetLimit()).To(Equal(50)) // Falls back to default
 		})
@@ -89,7 +97,8 @@ var _ = Describe("Paginator", func() {
 			customDefault := 25
 			page := &paging.PageArgs{}
 
-			paginator := cursor.New(page, encoder, users, &customDefault)
+			paginator, err := cursor.New(page, schema, users, &customDefault)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(paginator.GetLimit()).To(Equal(25))
 		})
@@ -102,7 +111,8 @@ var _ = Describe("Paginator", func() {
 				First: &first,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			// TotalCount should return nil for cursor pagination
 			totalCount, err := paginator.PageInfo.TotalCount()
@@ -137,7 +147,8 @@ var _ = Describe("Paginator", func() {
 			}
 
 			// N+1 pattern: Pass 3 items (LIMIT+1) to signal there's a next page
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			hasNextPage, _ := paginator.PageInfo.HasNextPage()
 			Expect(hasNextPage).To(BeTrue()) // len(items) > limit means HasNextPage = true
@@ -149,13 +160,15 @@ var _ = Describe("Paginator", func() {
 				First: &first,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			hasNextPage, _ := paginator.PageInfo.HasNextPage()
 			Expect(hasNextPage).To(BeFalse()) // len(items) == limit means HasNextPage = false
 		})
 
 		It("indicates HasPreviousPage when cursor is provided", func() {
+			encoder, _ := schema.EncoderFor(&paging.PageArgs{})
 			cursorStr, _ := encoder.Encode(users[1])
 
 			first := 10
@@ -164,7 +177,8 @@ var _ = Describe("Paginator", func() {
 				After: cursorStr,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			hasPreviousPage, _ := paginator.PageInfo.HasPreviousPage()
 			Expect(hasPreviousPage).To(BeTrue()) // Has cursor = not first page
@@ -174,7 +188,8 @@ var _ = Describe("Paginator", func() {
 			emptyUsers := []*testUser{}
 			page := &paging.PageArgs{}
 
-			paginator := cursor.New(page, encoder, emptyUsers)
+			paginator, err := cursor.New(page, schema, emptyUsers)
+			Expect(err).ToNot(HaveOccurred())
 
 			startCursor, _ := paginator.PageInfo.StartCursor()
 			Expect(startCursor).To(BeNil())
@@ -188,52 +203,61 @@ var _ = Describe("Paginator", func() {
 	})
 
 	Describe("OrderBy", func() {
-		It("should use default created_at DESC when no sort columns provided", func() {
+		It("should include fixed field when no sort columns provided", func() {
 			page := &paging.PageArgs{}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
+			// Schema automatically includes fixed "id" field
 			orderBy := paginator.GetOrderBy()
 			Expect(orderBy).To(HaveLen(1))
-			Expect(orderBy[0].Column).To(Equal("created_at"))
-			Expect(orderBy[0].Desc).To(BeTrue())
+			Expect(orderBy[0].Column).To(Equal("id"))
+			Expect(orderBy[0].Desc).To(BeTrue()) // Fixed field is DESC
 		})
 
-		It("should set DESC flag when specified", func() {
-			page := paging.WithSortBy(&paging.PageArgs{}, true, "created_at", "id")
+		It("should include user sorts and fixed field", func() {
+			page := paging.WithSortBy(&paging.PageArgs{}, "created_at", true)
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
+			// Schema includes user sort + fixed "id" field
 			orderBy := paginator.GetOrderBy()
 			Expect(orderBy).To(HaveLen(2))
 			Expect(orderBy[0].Column).To(Equal("created_at"))
 			Expect(orderBy[0].Desc).To(BeTrue())
 			Expect(orderBy[1].Column).To(Equal("id"))
-			Expect(orderBy[1].Desc).To(BeTrue())
+			Expect(orderBy[1].Desc).To(BeTrue()) // Fixed field
 		})
 
-		It("should set ASC when DESC is false", func() {
-			page := paging.WithSortBy(&paging.PageArgs{}, false, "name", "id")
+		It("should support multiple user-sortable columns", func() {
+			page := paging.WithMultiSort(&paging.PageArgs{},
+				paging.OrderBy{Column: "name", Desc: false},
+				paging.OrderBy{Column: "email", Desc: true},
+			)
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
+			// Schema includes user sorts + fixed "id" field
 			orderBy := paginator.GetOrderBy()
-			Expect(orderBy).To(HaveLen(2))
+			Expect(orderBy).To(HaveLen(3))
 			Expect(orderBy[0].Column).To(Equal("name"))
 			Expect(orderBy[0].Desc).To(BeFalse())
-			Expect(orderBy[1].Column).To(Equal("id"))
-			Expect(orderBy[1].Desc).To(BeFalse())
+			Expect(orderBy[1].Column).To(Equal("email"))
+			Expect(orderBy[1].Desc).To(BeTrue())
+			Expect(orderBy[2].Column).To(Equal("id"))
+			Expect(orderBy[2].Desc).To(BeTrue()) // Fixed field
 		})
 
-		It("should handle single column", func() {
-			page := paging.WithSortBy(&paging.PageArgs{}, true, "email")
+		It("should validate sort fields and return error for invalid fields", func() {
+			page := paging.WithSortBy(&paging.PageArgs{}, "invalid_field", true)
 
-			paginator := cursor.New(page, encoder, users)
+			_, err := cursor.New(page, schema, users)
 
-			orderBy := paginator.GetOrderBy()
-			Expect(orderBy).To(HaveLen(1))
-			Expect(orderBy[0].Column).To(Equal("email"))
-			Expect(orderBy[0].Desc).To(BeTrue())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid sort field: invalid_field"))
 		})
 	})
 
@@ -244,14 +268,15 @@ var _ = Describe("Paginator", func() {
 				First: &first,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Transform function (just return same user for testing)
 			transform := func(u *testUser) (*testUser, error) {
 				return u, nil
 			}
 
-			conn, err := cursor.BuildConnection(paginator, users, encoder, transform)
+			conn, err := cursor.BuildConnection(paginator, users, transform)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(conn).ToNot(BeNil())
@@ -272,14 +297,15 @@ var _ = Describe("Paginator", func() {
 				First: &first,
 			}
 
-			paginator := cursor.New(page, encoder, users)
+			paginator, err := cursor.New(page, schema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Transform function that returns error
 			transform := func(u *testUser) (*testUser, error) {
 				return nil, errors.New("transform error")
 			}
 
-			conn, err := cursor.BuildConnection(paginator, users, encoder, transform)
+			conn, err := cursor.BuildConnection(paginator, users, transform)
 
 			Expect(err).To(HaveOccurred())
 			Expect(conn).To(BeNil())
@@ -289,13 +315,14 @@ var _ = Describe("Paginator", func() {
 			emptyUsers := []*testUser{}
 			page := &paging.PageArgs{}
 
-			paginator := cursor.New(page, encoder, emptyUsers)
+			paginator, err := cursor.New(page, schema, emptyUsers)
+			Expect(err).ToNot(HaveOccurred())
 
 			transform := func(u *testUser) (*testUser, error) {
 				return u, nil
 			}
 
-			conn, err := cursor.BuildConnection(paginator, emptyUsers, encoder, transform)
+			conn, err := cursor.BuildConnection(paginator, emptyUsers, transform)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(conn.Nodes).To(HaveLen(0))

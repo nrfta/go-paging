@@ -15,7 +15,7 @@ import (
 
 var _ = Describe("Cursor Pagination Integration Tests", func() {
 	var userIDs []string
-	var encoder paging.CursorEncoder[*models.User]
+	var userSchema *cursor.Schema[*models.User]
 
 	BeforeEach(func() {
 		// Clean tables before each test
@@ -27,13 +27,11 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(userIDs).To(HaveLen(25))
 
-		// Create encoder for users (created_at, id)
-		encoder = cursor.NewCompositeCursorEncoder(func(u *models.User) map[string]any {
-			return map[string]any{
-				"created_at": u.CreatedAt,
-				"id":         u.ID,
-			}
-		})
+		// Create schema for users with sortable fields
+		userSchema = cursor.NewSchema[*models.User]().
+			Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+			Field("email", "e", func(u *models.User) any { return u.Email }).
+			FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
 	})
 
 	// Helper to create a standard user fetcher with cursor strategy
@@ -62,7 +60,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 
 			// Fetch with pagination
 			fetchParams := paging.FetchParams{
-				Limit: 10 + 1,
+				Limit:  10 + 1,
 				Cursor: nil, // First page
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -73,7 +71,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create paginator
-			paginator := cursor.New(pageArgs, encoder, users)
+			paginator, err := cursor.New(pageArgs, userSchema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Verify results (N+1: we fetch 11, paginator trims to 10)
 			Expect(paginator.GetLimit()).To(Equal(10))
@@ -114,7 +113,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
-				Limit: 10 + 1,
+				Limit:  10 + 1,
 				Cursor: nil,
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -124,26 +123,29 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			firstPageUsers, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
 
-			paginator := cursor.New(pageArgs, encoder, firstPageUsers)
+			paginator, err := cursor.New(pageArgs, userSchema, firstPageUsers)
+			Expect(err).ToNot(HaveOccurred())
 			endCursor, _ := paginator.PageInfo.EndCursor()
 
 			// Fetch second page using EndCursor
 			pageArgs.After = endCursor
-			cursorPos, _ := encoder.Decode(*endCursor)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(*endCursor)
 
 			fetchParams.Cursor = cursorPos
 			secondPageUsers, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create second paginator
-			paginator2 := cursor.New(pageArgs, encoder, secondPageUsers)
+			paginator2, err := cursor.New(pageArgs, userSchema, secondPageUsers)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Verify N+1 pattern: fetched LIMIT+1 records (11) because there's a 3rd page
 			Expect(secondPageUsers).To(HaveLen(11), "N+1: should fetch LIMIT+1 when there's a next page")
 
 			// Verify BuildConnection trims to LIMIT
 			transform := func(u *models.User) (*models.User, error) { return u, nil }
-			conn, err := cursor.BuildConnection(paginator2, secondPageUsers, encoder, transform)
+			conn, err := cursor.BuildConnection(paginator2, secondPageUsers, transform)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(conn.Nodes).To(HaveLen(10), "BuildConnection should trim to LIMIT")
 
@@ -182,11 +184,12 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 
 				var cursorPos *paging.CursorPosition
 				if currentCursor != nil {
-					cursorPos, _ = encoder.Decode(*currentCursor)
+					enc, _ := userSchema.EncoderFor(pageArgs)
+					cursorPos, _ = enc.Decode(*currentCursor)
 				}
 
 				fetchParams := paging.FetchParams{
-					Limit: 10 + 1,
+					Limit:  10 + 1,
 					Cursor: cursorPos,
 					OrderBy: []paging.OrderBy{
 						{Column: "created_at", Desc: true},
@@ -196,7 +199,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 				users, err := fetcher.Fetch(ctx, fetchParams)
 				Expect(err).ToNot(HaveOccurred())
 
-				paginator := cursor.New(pageArgs, encoder, users)
+				paginator, err := cursor.New(pageArgs, userSchema, users)
+				Expect(err).ToNot(HaveOccurred())
 				currentCursor, _ = paginator.PageInfo.EndCursor()
 			}
 
@@ -206,9 +210,10 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 				After: currentCursor,
 			}
 
-			cursorPos, _ := encoder.Decode(*currentCursor)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(*currentCursor)
 			fetchParams := paging.FetchParams{
-				Limit: 10 + 1,
+				Limit:  10 + 1,
 				Cursor: cursorPos,
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -218,7 +223,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			lastPageUsers, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
 
-			paginator := cursor.New(pageArgs, encoder, lastPageUsers)
+			paginator, err := cursor.New(pageArgs, userSchema, lastPageUsers)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Last page has 5 items (25 total - 20 already fetched)
 			Expect(lastPageUsers).To(HaveLen(5))
@@ -242,19 +248,21 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 				ID:        "00000000-0000-0000-0000-000000000000",
 				CreatedAt: time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
 			}
-			pastCursor, _ := encoder.Encode(pastUser)
 
 			first := 10
 			pageArgs := &paging.PageArgs{
 				First: &first,
-				After: pastCursor,
 			}
+
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			pastCursor, _ := enc.Encode(pastUser)
+			pageArgs.After = pastCursor
 
 			fetcher := createUserFetcher()
 
-			cursorPos, _ := encoder.Decode(*pastCursor)
+			cursorPos, _ := enc.Decode(*pastCursor)
 			fetchParams := paging.FetchParams{
-				Limit: 10 + 1,
+				Limit:  10 + 1,
 				Cursor: cursorPos,
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -264,7 +272,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			users, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
 
-			paginator := cursor.New(pageArgs, encoder, users)
+			paginator, err := cursor.New(pageArgs, userSchema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Should return 0 items
 			Expect(users).To(HaveLen(0))
@@ -284,32 +293,22 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 
 	Describe("Custom Sorting", func() {
 		It("should sort by email ascending", func() {
-			// Create encoder for email sorting
-			emailEncoder := cursor.NewCompositeCursorEncoder(func(u *models.User) map[string]any {
-				return map[string]any{
-					"email": u.Email,
-					"id":    u.ID,
-				}
-			})
-
 			first := 5
-			pageArgs := &paging.PageArgs{First: &first}
-			pageArgs = paging.WithSortBy(pageArgs, false, "email", "id")
+			pageArgs := paging.WithMultiSort(&paging.PageArgs{First: &first},
+				paging.OrderBy{Column: "email", Desc: false},
+			)
 
 			fetcher := createUserFetcher()
 
-			fetchParams := paging.FetchParams{
-				Limit: 5 + 1,
-				Cursor: nil,
-				OrderBy: []paging.OrderBy{
-					{Column: "email", Desc: false},
-					{Column: "id", Desc: false},
-				},
-			}
+			// Use schema's BuildFetchParams to get complete FetchParams
+			fetchParams, err := cursor.BuildFetchParams(pageArgs, userSchema)
+			Expect(err).ToNot(HaveOccurred())
+
 			users, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
 
-			paginator := cursor.New(pageArgs, emailEncoder, users)
+			paginator, err := cursor.New(pageArgs, userSchema, users)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Verify N+1 pattern: fetched LIMIT+1 records (6) because there are 25 users
 			Expect(users).To(HaveLen(6), "N+1: should fetch LIMIT+1 (5+1=6) when there's a next page")
@@ -344,11 +343,12 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 
 				var cursorPos *paging.CursorPosition
 				if currentCursor != nil {
-					cursorPos, _ = encoder.Decode(*currentCursor)
+					enc, _ := userSchema.EncoderFor(pageArgs)
+					cursorPos, _ = enc.Decode(*currentCursor)
 				}
 
 				fetchParams := paging.FetchParams{
-					Limit: 10 + 1,
+					Limit:  10 + 1,
 					Cursor: cursorPos,
 					OrderBy: []paging.OrderBy{
 						{Column: "created_at", Desc: true},
@@ -370,7 +370,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 					allIDs[u.ID] = true
 				}
 
-				paginator := cursor.New(pageArgs, encoder, users)
+				paginator, err := cursor.New(pageArgs, userSchema, users)
+				Expect(err).ToNot(HaveOccurred())
 				currentCursor, _ = paginator.PageInfo.EndCursor()
 			}
 
@@ -406,7 +407,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 
 				var cursorPos *paging.CursorPosition
 				if currentCursor != nil {
-					cursorPos, _ = encoder.Decode(*currentCursor)
+					enc, _ := userSchema.EncoderFor(pageArgs)
+					cursorPos, _ = enc.Decode(*currentCursor)
 				}
 
 				fetchParams := paging.FetchParams{
@@ -421,7 +423,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 				// Note: We fetch pageSize+1 but paginator will trim to pageSize
 
-				paginator := cursor.New(pageArgs, encoder, users)
+				paginator, err := cursor.New(pageArgs, userSchema, users)
+				Expect(err).ToNot(HaveOccurred())
 
 				// After paginator processes, we should have pageSize items
 				// (trimmed from pageSize+1 if we got that many)
@@ -438,20 +441,21 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 		It("should handle malformed base64 cursor", func() {
 			first := 10
 			invalid := "invalid-base64!!!"
-			_ = &paging.PageArgs{
+			pageArgs := &paging.PageArgs{
 				First: &first,
 				After: &invalid,
 			}
 
 			// Decoder should return nil for invalid cursor
-			cursorPos, _ := encoder.Decode(invalid)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(invalid)
 			Expect(cursorPos).To(BeNil())
 
 			// Fetch should work as if it's the first page
 			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
-				Limit: 10 + 1,
+				Limit:  10 + 1,
 				Cursor: cursorPos, // nil
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -470,25 +474,27 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			first := 10
 			// Base64 encode invalid JSON
 			invalid := "e25vdCB2YWxpZCBqc29ufQ==" // base64("{not valid json}")
-			_ = &paging.PageArgs{
+			pageArgs := &paging.PageArgs{
 				First: &first,
 				After: &invalid,
 			}
 
 			// Decoder should return nil for invalid JSON
-			cursorPos, _ := encoder.Decode(invalid)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(invalid)
 			Expect(cursorPos).To(BeNil())
 		})
 
 		It("should handle empty cursor string", func() {
 			first := 10
 			empty := ""
-			_ = &paging.PageArgs{
+			pageArgs := &paging.PageArgs{
 				First: &first,
 				After: &empty,
 			}
 
-			cursorPos, _ := encoder.Decode(empty)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(empty)
 			Expect(cursorPos).To(BeNil())
 		})
 	})
@@ -501,13 +507,10 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 		})
 
 		It("should paginate posts with published filter", func() {
-			// Create encoder for posts
-			postEncoder := cursor.NewCompositeCursorEncoder(func(p *models.Post) map[string]any {
-				return map[string]any{
-					"published_at": p.PublishedAt,
-					"id":           p.ID,
-				}
-			})
+			// Create schema for posts
+			postSchema := cursor.NewSchema[*models.Post]().
+				Field("published_at", "p", func(p *models.Post) any { return p.PublishedAt }).
+				FixedField("id", cursor.DESC, "i", func(p *models.Post) any { return p.ID })
 
 			first := 10
 			pageArgs := &paging.PageArgs{First: &first}
@@ -527,7 +530,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			)
 
 			fetchParams := paging.FetchParams{
-				Limit: 10 + 1,
+				Limit:  10 + 1,
 				Cursor: nil,
 				OrderBy: []paging.OrderBy{
 					{Column: "published_at", Desc: true},
@@ -537,7 +540,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			posts, err := fetcher.Fetch(ctx, fetchParams)
 			Expect(err).ToNot(HaveOccurred())
 
-			paginator := cursor.New(pageArgs, postEncoder, posts)
+			paginator, err := cursor.New(pageArgs, postSchema, posts)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Verify N+1 pattern: Verify we fetched LIMIT+1 when there's a next page
 			// 25 users * 3 posts * 2/3 published = 50 posts, so first page should have 11 records
@@ -546,7 +550,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 
 			// Verify BuildConnection trims to LIMIT
 			transform := func(p *models.Post) (*models.Post, error) { return p, nil }
-			conn, err := cursor.BuildConnection(paginator, posts, postEncoder, transform)
+			conn, err := cursor.BuildConnection(paginator, posts, transform)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(conn.Nodes).To(HaveLen(10), "BuildConnection should trim to LIMIT")
 
@@ -571,7 +575,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
-				Limit: 5 + 1,
+				Limit:  5 + 1,
 				Cursor: nil,
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -584,11 +588,13 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			// N+1 pattern: Verify we fetched LIMIT+1 records
 			Expect(firstPage).To(HaveLen(6), "N+1: should fetch LIMIT+1 (5+1=6) when there's a next page")
 
-			paginator := cursor.New(pageArgs, encoder, firstPage)
+			paginator, err := cursor.New(pageArgs, userSchema, firstPage)
+			Expect(err).ToNot(HaveOccurred())
 			endCursor, _ := paginator.PageInfo.EndCursor()
 
 			// Fetch second page
-			cursorPos, _ := encoder.Decode(*endCursor)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(*endCursor)
 			fetchParams.Cursor = cursorPos
 
 			secondPage, err := fetcher.Fetch(ctx, fetchParams)
@@ -616,7 +622,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			fetcher := createUserFetcher()
 
 			fetchParams := paging.FetchParams{
-				Limit: 5 + 1,
+				Limit:  5 + 1,
 				Cursor: nil,
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -629,7 +635,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			// N+1 pattern: Verify we fetched LIMIT+1 records
 			Expect(firstPageUsers).To(HaveLen(6), "N+1: should fetch LIMIT+1 (5+1=6) when there's a next page")
 
-			paginator := cursor.New(pageArgs, encoder, firstPageUsers)
+			paginator, err := cursor.New(pageArgs, userSchema, firstPageUsers)
+			Expect(err).ToNot(HaveOccurred())
 			endCursor, _ := paginator.PageInfo.EndCursor()
 
 			// Now apply a filter AND use the cursor
@@ -647,7 +654,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			)
 
 			// Decode cursor and fetch with filter
-			cursorPos, _ := encoder.Decode(*endCursor)
+			enc, _ := userSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(*endCursor)
 			fetchParams.Cursor = cursorPos
 
 			filteredUsers, err := fetcherWithFilter.Fetch(ctx, fetchParams)
@@ -691,7 +699,7 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			)
 
 			fetchParams := paging.FetchParams{
-				Limit: 5 + 1,
+				Limit:  5 + 1,
 				Cursor: nil,
 				OrderBy: []paging.OrderBy{
 					{Column: "created_at", Desc: true},
@@ -707,7 +715,8 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			// Verify HasNextPage is correctly set based on N+1 result
 			first := 5
 			pageArgs := &paging.PageArgs{First: &first}
-			paginator := cursor.New(pageArgs, encoder, users)
+			paginator, err := cursor.New(pageArgs, userSchema, users)
+			Expect(err).ToNot(HaveOccurred())
 			hasNext, _ := paginator.PageInfo.HasNextPage()
 			Expect(hasNext).To(BeTrue(), "HasNextPage should be true when we got LIMIT+1 records")
 
@@ -715,6 +724,266 @@ var _ = Describe("Cursor Pagination Integration Tests", func() {
 			for _, u := range users {
 				Expect(u.Email).To(HaveSuffix("@example.com"))
 				Expect(u.Name).ToNot(BeNil())
+			}
+		})
+	})
+
+	Describe("JOIN Query Pagination with Column Name Conflicts", func() {
+		// Define a struct to hold joined data (user + post)
+		type UserWithPost struct {
+			UserID        string
+			UserName      string
+			UserEmail     string
+			UserCreatedAt time.Time
+			PostID        string
+			PostTitle     string
+			PostCreatedAt time.Time
+		}
+
+		BeforeEach(func() {
+			// Seed posts for the users
+			_, err := SeedPosts(ctx, container.DB, userIDs, 2)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should paginate JOIN queries with qualified column names in ORDER BY", func() {
+			// CRITICAL: Create schema with QUALIFIED column names
+			// This ensures the cursor strategy generates WHERE clauses like:
+			// WHERE (posts.created_at, posts.id) < ($1, $2)
+			// instead of ambiguous: WHERE (created_at, id) < ($1, $2)
+			joinSchema := cursor.NewSchema[*UserWithPost]().
+				Field("posts.created_at", "c", func(uwp *UserWithPost) any { return uwp.PostCreatedAt }).
+				FixedField("posts.id", cursor.DESC, "i", func(uwp *UserWithPost) any { return uwp.PostID })
+
+			first := 10
+			pageArgs := &paging.PageArgs{First: &first}
+
+			// Create fetcher using SQLBoiler query mods with INNER JOIN
+			// CRITICAL: Must use qualified column names in qm.Select to avoid ambiguity
+			fetcher := sqlboiler.NewFetcher(
+				func(ctx context.Context, mods ...qm.QueryMod) ([]*UserWithPost, error) {
+					var results []*UserWithPost
+
+					// Build query mods with explicit SELECT and INNER JOIN
+					queryMods := []qm.QueryMod{
+						qm.Select(
+							"users.id AS user_id",
+							"users.name AS user_name",
+							"users.email AS user_email",
+							"users.created_at AS user_created_at",
+							"posts.id AS post_id",
+							"posts.title AS post_title",
+							"posts.created_at AS post_created_at",
+						),
+						qm.InnerJoin("users ON posts.user_id = users.id"),
+					}
+					queryMods = append(queryMods, mods...)
+
+					err := models.Posts(queryMods...).Bind(ctx, container.DB, &results)
+					return results, err
+				},
+				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+					return 0, nil
+				},
+				sqlboiler.CursorToQueryMods,
+			)
+
+			// Fetch first page with qualified column names in OrderBy
+			// This ensures the cursor strategy generates: ORDER BY posts.created_at DESC, posts.id DESC
+			fetchParams := paging.FetchParams{
+				Limit:  10 + 1,
+				Cursor: nil,
+				OrderBy: []paging.OrderBy{
+					{Column: "posts.created_at", Desc: true}, // Qualified column name
+					{Column: "posts.id", Desc: true},         // Qualified column name
+				},
+			}
+			firstPageResults, err := fetcher.Fetch(ctx, fetchParams)
+			Expect(err).ToNot(HaveOccurred())
+
+			// N+1 pattern: We have 25 users * 2 posts = 50 total, so should get LIMIT+1 records
+			Expect(firstPageResults).To(Or(
+				HaveLen(11), // Full page with N+1
+				HaveLen(10), // Exact page
+			), "N+1: should fetch at least LIMIT records")
+
+			// Verify data integrity - all results should have valid user and post data
+			for _, result := range firstPageResults {
+				Expect(result.UserID).ToNot(BeEmpty())
+				Expect(result.PostID).ToNot(BeEmpty())
+				Expect(result.UserName).ToNot(BeEmpty())
+				Expect(result.PostTitle).ToNot(BeEmpty())
+			}
+
+			// Create paginator
+			paginator, err := cursor.New(pageArgs, joinSchema, firstPageResults)
+			Expect(err).ToNot(HaveOccurred())
+			endCursor, _ := paginator.PageInfo.EndCursor()
+			Expect(endCursor).ToNot(BeNil())
+
+			// Fetch second page using the cursor
+			pageArgs.After = endCursor
+			enc, _ := joinSchema.EncoderFor(pageArgs)
+			cursorPos, _ := enc.Decode(*endCursor)
+			fetchParams.Cursor = cursorPos
+
+			secondPageResults, err := fetcher.Fetch(ctx, fetchParams)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Should have at least some results (not necessarily LIMIT+1)
+			Expect(secondPageResults).ToNot(BeEmpty(), "Second page should have results")
+
+			// Verify no overlap between pages (check post IDs)
+			// Use the actual length of results to trim, accounting for N+1 pattern
+			firstPageTrimmed := TrimToLimit(firstPageResults, 10)
+			secondPageTrimmed := TrimToLimit(secondPageResults, 10)
+
+			firstPagePostIDs := make(map[string]bool)
+			for _, r := range firstPageTrimmed {
+				firstPagePostIDs[r.PostID] = true
+			}
+
+			overlaps := []string{}
+			for _, r := range secondPageTrimmed {
+				if firstPagePostIDs[r.PostID] {
+					overlaps = append(overlaps, r.PostID)
+				}
+			}
+
+			Expect(overlaps).To(BeEmpty(), "Found overlapping post IDs between pages: %v", overlaps)
+
+			// Verify pagination metadata
+			paginator2, err := cursor.New(pageArgs, joinSchema, secondPageResults)
+			Expect(err).ToNot(HaveOccurred())
+			hasNext, _ := paginator2.PageInfo.HasNextPage()
+			Expect(hasNext).To(BeTrue()) // Still have more pages (50 total posts)
+
+			hasPrev, _ := paginator2.PageInfo.HasPreviousPage()
+			Expect(hasPrev).To(BeTrue()) // We're on page 2
+		})
+
+		It("should handle ORDER BY with unqualified column names causing ambiguity", func() {
+			// This test intentionally uses UNQUALIFIED column names to verify error handling
+			// Both users and posts tables have 'created_at' and 'id' columns
+
+			// Create fetcher using SQLBoiler with INNER JOIN
+			fetcher := sqlboiler.NewFetcher(
+				func(ctx context.Context, mods ...qm.QueryMod) ([]*UserWithPost, error) {
+					var results []*UserWithPost
+
+					// Build query mods with explicit SELECT and INNER JOIN
+					queryMods := []qm.QueryMod{
+						qm.Select(
+							"users.id AS user_id",
+							"users.name AS user_name",
+							"users.email AS user_email",
+							"users.created_at AS user_created_at",
+							"posts.id AS post_id",
+							"posts.title AS post_title",
+							"posts.created_at AS post_created_at",
+						),
+						qm.InnerJoin("users ON posts.user_id = users.id"),
+					}
+					queryMods = append(queryMods, mods...)
+
+					err := models.Posts(queryMods...).Bind(ctx, container.DB, &results)
+					return results, err
+				},
+				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+					return 0, nil
+				},
+				sqlboiler.CursorToQueryMods,
+			)
+
+			// Use UNQUALIFIED column names in OrderBy
+			// This will cause "column reference 'created_at' is ambiguous" error
+			fetchParams := paging.FetchParams{
+				Limit:  10 + 1,
+				Cursor: nil,
+				OrderBy: []paging.OrderBy{
+					{Column: "created_at", Desc: true}, // UNQUALIFIED - ambiguous!
+					{Column: "id", Desc: true},         // UNQUALIFIED - ambiguous!
+				},
+			}
+
+			_, err := fetcher.Fetch(ctx, fetchParams)
+
+			// Should get an error about ambiguous column reference
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Or(
+				ContainSubstring("ambiguous"),
+				ContainSubstring("column"),
+			))
+		})
+
+		It("should correctly order by user columns when specified", func() {
+			// This test verifies we can sort by user columns instead of post columns
+			// Create fetcher using SQLBoiler with INNER JOIN
+			fetcher := sqlboiler.NewFetcher(
+				func(ctx context.Context, mods ...qm.QueryMod) ([]*UserWithPost, error) {
+					var results []*UserWithPost
+
+					// Build query mods with explicit SELECT and INNER JOIN
+					queryMods := []qm.QueryMod{
+						qm.Select(
+							"users.id AS user_id",
+							"users.name AS user_name",
+							"users.email AS user_email",
+							"users.created_at AS user_created_at",
+							"posts.id AS post_id",
+							"posts.title AS post_title",
+							"posts.created_at AS post_created_at",
+						),
+						qm.InnerJoin("users ON posts.user_id = users.id"),
+					}
+					queryMods = append(queryMods, mods...)
+
+					err := models.Posts(queryMods...).Bind(ctx, container.DB, &results)
+					return results, err
+				},
+				func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+					return 0, nil
+				},
+				sqlboiler.CursorToQueryMods,
+			)
+
+			// Order by USERS columns (qualified)
+			fetchParams := paging.FetchParams{
+				Limit:  10 + 1,
+				Cursor: nil,
+				OrderBy: []paging.OrderBy{
+					{Column: "users.created_at", Desc: true}, // Sort by user creation time
+					{Column: "users.id", Desc: true},
+				},
+			}
+			results, err := fetcher.Fetch(ctx, fetchParams)
+			Expect(err).ToNot(HaveOccurred())
+
+			// N+1 pattern: Should get LIMIT+1 records
+			Expect(results).To(HaveLen(11), "N+1: should fetch LIMIT+1 (10+1=11)")
+
+			// Create schema and paginator to verify cursor generation works
+			joinSchema := cursor.NewSchema[*UserWithPost]().
+				Field("users.created_at", "c", func(uwp *UserWithPost) any { return uwp.UserCreatedAt }).
+				FixedField("users.id", cursor.DESC, "i", func(uwp *UserWithPost) any { return uwp.UserID })
+
+			first := 10
+			pageArgs := &paging.PageArgs{First: &first}
+			paginator, err := cursor.New(pageArgs, joinSchema, results)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify HasNextPage is set correctly
+			hasNext, _ := paginator.PageInfo.HasNextPage()
+			Expect(hasNext).To(BeTrue())
+
+			// Verify results are sorted by user creation time
+			// Each user has 2 posts, so consecutive posts might have the same user
+			for i := 1; i < len(results)-1; i++ {
+				prev := results[i-1]
+				curr := results[i]
+
+				// User created_at should be DESC (newer or equal)
+				Expect(prev.UserCreatedAt.After(curr.UserCreatedAt) || prev.UserCreatedAt.Equal(curr.UserCreatedAt)).To(BeTrue())
 			}
 		})
 	})

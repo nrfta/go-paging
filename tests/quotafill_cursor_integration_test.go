@@ -54,7 +54,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			}
 
 			// Wrap with quota-fill
-			wrapper := quotafill.New[*models.User](mockPaginator, authFilter, nil, []paging.OrderBy{},
+			wrapper := quotafill.New[*models.User](mockPaginator, authFilter, nil,
 				quotafill.WithMaxIterations(5),
 				quotafill.WithMaxRecordsExamined(50),
 			)
@@ -99,7 +99,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return authorized, nil
 			}
 
-			wrapper := quotafill.New[*models.User](mockPaginator, sparseFilter, nil, []paging.OrderBy{},
+			wrapper := quotafill.New[*models.User](mockPaginator, sparseFilter, nil,
 				quotafill.WithMaxIterations(5),
 				quotafill.WithMaxRecordsExamined(50),
 			)
@@ -141,7 +141,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return active, nil
 			}
 
-			wrapper := quotafill.New[*models.User](mockPaginator, activeFilter, nil, []paging.OrderBy{})
+			wrapper := quotafill.New[*models.User](mockPaginator, activeFilter, nil)
 
 			first := 5
 			args := &paging.PageArgs{First: &first}
@@ -188,7 +188,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return filtered, nil
 			}
 
-			wrapper := quotafill.New[*models.User](mockPaginator, compositeFilter, nil, []paging.OrderBy{},
+			wrapper := quotafill.New[*models.User](mockPaginator, compositeFilter, nil,
 				quotafill.WithMaxIterations(5),
 			)
 
@@ -216,7 +216,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			mockPaginator := newSimpleMockFetcher(allUsers)
-			wrapper := quotafill.New[*models.User](mockPaginator, rejectAllUsersFilter(), nil, []paging.OrderBy{},
+			wrapper := quotafill.New[*models.User](mockPaginator, rejectAllUsersFilter(), nil,
 				quotafill.WithMaxIterations(3),
 			)
 
@@ -246,7 +246,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return []*models.User{}, nil
 			}
 
-			wrapper := quotafill.New[*models.User](mockPaginator, lowPassFilter, nil, []paging.OrderBy{},
+			wrapper := quotafill.New[*models.User](mockPaginator, lowPassFilter, nil,
 				quotafill.WithMaxRecordsExamined(15),
 			)
 
@@ -275,7 +275,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 				return []*models.User{}, nil
 			}
 
-			wrapper := quotafill.New[*models.User](mockPaginator, slowFilter, nil, []paging.OrderBy{},
+			wrapper := quotafill.New[*models.User](mockPaginator, slowFilter, nil,
 				quotafill.WithTimeout(100*time.Millisecond), // Very short timeout
 				quotafill.WithMaxIterations(10),              // Allow enough iterations
 			)
@@ -294,24 +294,20 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 
 	Describe("Real Cursor Pagination with SQLBoiler", func() {
 		var (
-			encoder paging.CursorEncoder[*models.User]
+			userSchema *cursor.Schema[*models.User]
 		)
 
 		BeforeEach(func() {
-			// Create real cursor encoder (same as cursor integration tests)
-			encoder = cursor.NewCompositeCursorEncoder(func(u *models.User) map[string]any {
-				return map[string]any{
-					"created_at": u.CreatedAt,
-					"id":         u.ID,
-				}
-			})
+			userSchema = cursor.NewSchema[*models.User]().
+				Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+				FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
 		})
 
 		It("should paginate with cursor and filter in a single iteration", func() {
 			fetcher := createRealCursorFetcher()
 
 			// Filter passes 50% of users (even user numbers: 2,4,6,...,100)
-			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(2), encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
+			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(2), userSchema,
 				quotafill.WithMaxIterations(5),
 			)
 
@@ -340,7 +336,9 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(endCursor).ToNot(BeNil(), "EndCursor should be generated")
 
 			// Decode end cursor and verify it matches the last returned item
-			cursorPos, err := encoder.Decode(*endCursor)
+			enc, err := userSchema.EncoderFor(&paging.PageArgs{})
+			Expect(err).ToNot(HaveOccurred())
+			cursorPos, err := enc.Decode(*endCursor)
 			Expect(err).ToNot(HaveOccurred())
 			lastUser := page.Nodes[len(page.Nodes)-1]
 			Expect(cursorPos.Values["id"]).To(Equal(lastUser.ID), "EndCursor should encode last filtered item's ID")
@@ -350,7 +348,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			fetcher := createRealCursorFetcher()
 
 			// Filter passes ~33% of users (divisible by 3: 3,6,9,...,99)
-			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(3), encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
+			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(3), userSchema,
 				quotafill.WithMaxIterations(10),
 				quotafill.WithBackoffMultipliers([]int{1, 2, 3, 5, 8}),
 			)
@@ -376,7 +374,9 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(endCursor).ToNot(BeNil())
 
-			cursorPos, err := encoder.Decode(*endCursor)
+			enc, err := userSchema.EncoderFor(&paging.PageArgs{})
+			Expect(err).ToNot(HaveOccurred())
+			cursorPos, err := enc.Decode(*endCursor)
 			Expect(err).ToNot(HaveOccurred())
 
 			lastReturnedUser := page.Nodes[len(page.Nodes)-1]
@@ -400,7 +400,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			evenUserFilter := userNumFilter(2)
 
 			fetcher := createRealCursorFetcher()
-			wrapper := quotafill.New[*models.User](fetcher, evenUserFilter, encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
+			wrapper := quotafill.New[*models.User](fetcher, evenUserFilter, userSchema,
 				quotafill.WithMaxIterations(10),
 				quotafill.WithMaxRecordsExamined(100),
 			)
@@ -429,7 +429,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 
 			// Create new paginator for page 2 (stateless)
 			fetcher2 := createRealCursorFetcher()
-			wrapper2 := quotafill.New[*models.User](fetcher2, evenUserFilter, encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
+			wrapper2 := quotafill.New[*models.User](fetcher2, evenUserFilter, userSchema,
 				quotafill.WithMaxIterations(10),
 				quotafill.WithMaxRecordsExamined(100),
 			)
@@ -465,7 +465,7 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			fetcher := createRealCursorFetcher()
 
 			// Sparse filter passes 10% (divisible by 10: 10,20,30,...,100)
-			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(10), encoder, []paging.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}},
+			wrapper := quotafill.New[*models.User](fetcher, userNumFilter(10), userSchema,
 				quotafill.WithMaxIterations(8),
 				quotafill.WithMaxRecordsExamined(100),
 			)
@@ -483,7 +483,9 @@ var _ = Describe("QuotaFill Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(endCursor).ToNot(BeNil())
 
-			cursorPos, err := encoder.Decode(*endCursor)
+			enc, err := userSchema.EncoderFor(&paging.PageArgs{})
+			Expect(err).ToNot(HaveOccurred())
+			cursorPos, err := enc.Decode(*endCursor)
 			Expect(err).ToNot(HaveOccurred())
 
 			lastUser := page.Nodes[len(page.Nodes)-1]
@@ -577,101 +579,3 @@ func createRealCursorFetcher() paging.Fetcher[*models.User] {
 	)
 }
 
-// createRealCursorPaginator creates a real cursor-based paginator using SQLBoiler
-// This is used for integration testing quota-fill with actual cursor pagination
-func createRealCursorPaginator(encoder paging.CursorEncoder[*models.User]) paging.Paginator[*models.User] {
-	// Create a real cursor paginator that uses SQLBoiler with CursorToQueryMods
-	return &realCursorPaginator{
-		encoder: encoder,
-		orderBy: []paging.OrderBy{
-			{Column: "created_at", Desc: true},
-			{Column: "id", Desc: true},
-		},
-	}
-}
-
-// realCursorPaginator implements paging.Paginator using real cursor pagination with SQLBoiler
-type realCursorPaginator struct {
-	encoder paging.CursorEncoder[*models.User]
-	orderBy []paging.OrderBy
-}
-
-func (p *realCursorPaginator) Paginate(ctx context.Context, args *paging.PageArgs) (*paging.Page[*models.User], error) {
-	// Decode cursor if present
-	var cursorPos *paging.CursorPosition
-	if args != nil && args.GetAfter() != nil {
-		var err error
-		cursorPos, err = p.encoder.Decode(*args.GetAfter())
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Get requested size (with N+1 for hasNextPage)
-	limit := 50 // default
-	if args != nil && args.GetFirst() != nil {
-		limit = *args.GetFirst()
-	}
-	fetchSize := limit + 1 // N+1 pattern
-
-	// Build fetch params with cursor
-	fetchParams := paging.FetchParams{
-		Limit:   fetchSize,
-		Cursor:  cursorPos,
-		OrderBy: p.orderBy,
-	}
-
-	// Create fetcher with CursorToQueryMods strategy
-	fetcher := sqlboiler.NewFetcher(
-		func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-			return models.Users(mods...).All(ctx, container.DB)
-		},
-		func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-			return 0, nil // Count not used for cursor pagination
-		},
-		sqlboiler.CursorToQueryMods,
-	)
-
-	// Fetch from database with cursor-based WHERE clause
-	users, err := fetcher.Fetch(ctx, fetchParams)
-	if err != nil {
-		return nil, err
-	}
-
-	// Determine hasNextPage using N+1 pattern
-	hasNextPage := len(users) > limit
-	if hasNextPage {
-		users = users[:limit] // Trim to requested size
-	}
-
-	// Build PageInfo with cursor encoding
-	pageInfo := paging.PageInfo{
-		HasNextPage: func() (bool, error) { return hasNextPage, nil },
-		HasPreviousPage: func() (bool, error) {
-			return cursorPos != nil, nil // Has cursor = not first page
-		},
-		StartCursor: func() (*string, error) {
-			if len(users) == 0 {
-				return nil, nil
-			}
-			return p.encoder.Encode(users[0])
-		},
-		EndCursor: func() (*string, error) {
-			if len(users) == 0 {
-				return nil, nil
-			}
-			return p.encoder.Encode(users[len(users)-1])
-		},
-		TotalCount: func() (*int, error) {
-			return nil, nil // Cursor pagination doesn't provide total count
-		},
-	}
-
-	return &paging.Page[*models.User]{
-		Nodes:    users,
-		PageInfo: &pageInfo,
-		Metadata: paging.Metadata{
-			Strategy: "cursor",
-		},
-	}, nil
-}

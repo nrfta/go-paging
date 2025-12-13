@@ -254,8 +254,9 @@ func (w *Wrapper[T]) fetchIteration(
 		return ""
 	}
 
-	// Encode cursor from last filtered item using schema
-	if w.schema != nil && len(state.filteredItems) > 0 {
+	// Encode cursor from last EXAMINED item (not last filtered item)
+	// This ensures we continue from where we left off in the database scan
+	if w.schema != nil && len(trimmedItems) > 0 {
 		// Build temporary args for encoder
 		cursorArgs := &paging.PageArgs{}
 		if args != nil && args.GetSortBy() != nil {
@@ -270,10 +271,10 @@ func (w *Wrapper[T]) fetchIteration(
 			return ""
 		}
 
-		lastFilteredItem := state.filteredItems[len(state.filteredItems)-1]
-		cursor, err := encoder.Encode(lastFilteredItem)
+		lastExaminedItem := trimmedItems[len(trimmedItems)-1]
+		cursor, err := encoder.Encode(lastExaminedItem)
 		if err != nil {
-			state.lastError = fmt.Errorf("encode cursor from filtered item (iteration %d): %w", state.iteration, err)
+			state.lastError = fmt.Errorf("encode cursor from examined item (iteration %d): %w", state.iteration, err)
 			return ""
 		}
 		state.currentCursor = cursor

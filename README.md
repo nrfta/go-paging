@@ -167,10 +167,14 @@ defaultLimit := 25
 paginator := offset.New(pageArgs, totalCount, &defaultLimit)
 
 // Sort by created_at descending
-pageArgs := paging.WithSortBy(nil, true, "created_at")
+pageArgs := paging.WithSortBy(nil, "created_at", true)
 
-// Sort by multiple columns
-pageArgs := paging.WithSortBy(nil, true, "created_at", "id")
+// Sort by multiple columns with different directions
+pageArgs := paging.WithMultiSort(nil,
+ paging.OrderBy{Column: "created_at", Desc: true},
+ paging.OrderBy{Column: "name", Desc: false},
+ paging.OrderBy{Column: "id", Desc: true},
+)
 ```
 
 ### Cursor Pagination
@@ -198,18 +202,15 @@ import (
 )
 
 func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
- // 1. Create encoder (defines cursor structure)
- encoder := cursor.NewCompositeCursorEncoder(func(u *models.User) map[string]any {
-  return map[string]any{
-   "created_at": u.CreatedAt,
-   "id":         u.ID,
-  }
- })
+ // 1. Create schema (single source of truth for cursor fields and ordering)
+ schema := cursor.NewSchema[*models.User]().
+  Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+  FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
 
  // 2. Create fetcher with cursor strategy
  fetcher := sqlboiler.NewFetcher(
   func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-   // ✅ Add filters only - NO qm.OrderBy here!
+   // Add filters only - NO qm.OrderBy here!
    mods = append([]qm.QueryMod{
     qm.Where("is_active = ?", true),
    }, mods...)
@@ -221,12 +222,11 @@ func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*pagi
   sqlboiler.CursorToQueryMods, // Use cursor strategy
  )
 
- // 3. Build fetch params with automatic N+1
- orderBy := []paging.OrderBy{
-  {Column: "created_at", Desc: true},
-  {Column: "id", Desc: true},
+ // 3. Build fetch params with automatic N+1 (schema provides encoder + orderBy)
+ fetchParams, err := cursor.BuildFetchParams(page, schema)
+ if err != nil {
+  return nil, err
  }
- fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)
 
  // 4. Fetch data
  users, err := fetcher.Fetch(ctx, fetchParams)
@@ -234,9 +234,14 @@ func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*pagi
   return nil, err
  }
 
- // 5. Build connection (automatically trims to requested limit)
- paginator := cursor.New(page, encoder, users)
- return cursor.BuildConnection(paginator, users, encoder, toDomainUser)
+ // 5. Create paginator (automatically trims to requested limit)
+ paginator, err := cursor.New(page, schema, users)
+ if err != nil {
+  return nil, err
+ }
+
+ // 6. Build connection
+ return cursor.BuildConnection(paginator, users, toDomainUser)
 }
 ```
 
@@ -312,6 +317,151 @@ CREATE INDEX idx_users_cursor ON users(created_at DESC, id DESC);
 CREATE INDEX idx_users_name_cursor ON users(name ASC, id ASC);
 ```
 
+### Schema Pattern
+
+The Schema is the foundation of cursor pagination. It provides a single source of truth for:
+
+1. **Cursor encoding**: Maps database fields to short, opaque cursor keys
+2. **Sort ordering**: Defines which fields can be sorted and their directions
+3. **Security**: Prevents information leakage by using short keys instead of column names
+4. **Fixed fields**: Ensures certain fields (like `id`) are always included for uniqueness
+
+```go
+import (
+ "github.com/nrfta/go-paging/cursor"
+ "github.com/nrfta/go-paging/sqlboiler"
+)
+
+// Define schema once at app startup
+var userSchema = cursor.NewSchema[*models.User]().
+ // Fixed field: Always sort by tenant_id first (for partitioning)
+ FixedField("tenant_id", cursor.ASC, "t", func(u *models.User) any {
+  return u.TenantID
+ }).
+ // User-sortable fields with short cursor keys
+ Field("name", "n", func(u *models.User) any { return u.Name }).
+ Field("email", "e", func(u *models.User) any { return u.Email }).
+ Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+ // Fixed field: Always append ID for uniqueness
+ FixedField("id", cursor.DESC, "i", func(u *models.User) any {
+  return u.ID
+ })
+
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
+ // 1. Create fetcher
+ fetcher := sqlboiler.NewFetcher(
+  func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+   mods = append([]qm.QueryMod{
+    qm.Where("is_active = ?", true),
+   }, mods...)
+   return models.Users(mods...).All(ctx, r.DB)
+  },
+  func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+   return 0, nil
+  },
+  sqlboiler.CursorToQueryMods,
+ )
+
+ // 2. Build fetch params (schema handles encoder + orderBy internally)
+ fetchParams, err := cursor.BuildFetchParams(page, userSchema)
+ if err != nil {
+  return nil, err // Invalid sort field in PageArgs
+ }
+ // Example: If page.SortBy = [{name, DESC}]
+ // OrderBy result: [tenant_id ASC, name DESC, id DESC]
+
+ // 3. Fetch data
+ users, err := fetcher.Fetch(ctx, fetchParams)
+ if err != nil {
+  return nil, err
+ }
+
+ // 4. Create paginator and build connection
+ paginator, err := cursor.New(page, userSchema, users)
+ if err != nil {
+  return nil, err
+ }
+ return cursor.BuildConnection(paginator, users, toDomainUser)
+}
+```
+
+**Schema benefits:**
+
+- **Security**: Cursors use short keys (`{"n": "Alice", "i": "123"}`) instead of column names
+- **Type safety**: Schema validates that sort fields exist before encoding
+- **Automatic fixed fields**: `tenant_id` and `id` are always included in ORDER BY and cursors
+- **Dynamic sorting**: Users can choose sort fields at runtime (GraphQL `sortBy` parameter)
+- **JOIN support**: Use qualified column names (`posts.created_at`) without exposing them in cursors
+
+**Multi-tenant example with fixed prefix:**
+
+```go
+var userSchema = cursor.NewSchema[*models.User]().
+ FixedField("tenant_id", cursor.ASC, "t", func(u *models.User) any {
+  return u.TenantID  // Always sort by tenant_id first
+ }).
+ Field("name", "n", func(u *models.User) any { return u.Name }).
+ FixedField("id", cursor.DESC, "i", func(u *models.User) any {
+  return u.ID
+ })
+
+// ORDER BY: tenant_id ASC, name DESC, id DESC
+// Cursor: {"t": 42, "n": "Alice", "i": "123"}
+// ✅ Efficient queries with (tenant_id, name, id) composite index
+```
+
+**JOIN query example:**
+
+```go
+type UserWithPost struct {
+ UserID        string
+ UserName      string
+ PostID        string
+ PostCreatedAt time.Time
+}
+
+var joinSchema = cursor.NewSchema[*UserWithPost]().
+ Field("posts.created_at", "pc", func(uwp *UserWithPost) any {
+  return uwp.PostCreatedAt
+ }).
+ Field("users.name", "un", func(uwp *UserWithPost) any {
+  return uwp.UserName
+ }).
+ FixedField("posts.id", cursor.DESC, "pi", func(uwp *UserWithPost) any {
+  return uwp.PostID
+ })
+
+// ORDER BY: posts.created_at DESC, users.name ASC, posts.id DESC
+// Cursor: {"pc": "2024-01-01", "un": "Alice", "pi": "post-123"}
+// ✅ No column name ambiguity in JOINs!
+// ✅ No schema information leaked in cursor!
+```
+
+**Dynamic sorting at runtime:**
+
+```go
+// GraphQL schema
+type Query {
+ users(page: PageArgs, sortBy: String): UserConnection!
+}
+
+// Resolver
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs, sortBy *string) (*paging.Connection[*User], error) {
+ // Apply user's sort choice
+ if sortBy != nil {
+  page = paging.WithSortBy(page, *sortBy, true)
+ }
+
+ // BuildFetchParams validates the sort field against the schema
+ fetchParams, err := cursor.BuildFetchParams(page, userSchema)
+ if err != nil {
+  return nil, err  // e.g., "invalid sort field: invalid_column"
+ }
+
+ // ... rest of pagination code
+}
+```
+
 **N+1 pattern:**
 
 All three pagination strategies use the N+1 pattern internally to detect if there's a next page:
@@ -323,22 +473,22 @@ All three pagination strategies use the N+1 pattern internally to detect if ther
 **This is now automatic** - you don't need to manually add +1:
 
 ```go
-// ✅ N+1 handled automatically!
-orderBy := []paging.OrderBy{
- {Column: "created_at", Desc: true},
- {Column: "id", Desc: true},
-}
-fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)  // Adds +1 internally
+// N+1 handled automatically!
+schema := cursor.NewSchema[*models.User]().
+ Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+ FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
+
+fetchParams, _ := cursor.BuildFetchParams(page, schema)  // Adds +1 internally
 users, _ := fetcher.Fetch(ctx, fetchParams)
 
-paginator := cursor.New(page, encoder, users)  // Detects N+1, trims to requested limit
-conn, _ := cursor.BuildConnection(paginator, users, encoder, transform)
+paginator, _ := cursor.New(page, schema, users)  // Detects N+1, trims to requested limit
+conn, _ := cursor.BuildConnection(paginator, users, transform)
 // conn.Nodes has the requested number of items, conn.PageInfo.HasNextPage() is accurate
 ```
 
 ### Quota-Fill Pagination
 
-Wraps any paginator with filter-aware iterative fetching. Solves the problem of inconsistent page sizes when applying authorization filters or other per-item filtering logic.
+Iteratively fetches batches until the requested page size is filled, applying a filter function to each batch. Solves the problem of inconsistent page sizes when applying authorization filters or other per-item filtering logic.
 
 **The problem:** Standard pagination with filtering creates inconsistent page sizes:
 
@@ -350,7 +500,7 @@ users, _ := fetcher.Fetch(ctx, limit: 10)
 authorized := filterAuthorized(users)  // Returns 3 items
 
 // Problem: User asked for 10, but got 3!
-return authorized  // ❌ Inconsistent page size
+return authorized  // Inconsistent page size
 ```
 
 This creates poor UX: uneven layouts, "Load More" buttons that appear/disappear, users clicking multiple times to see a full page.
@@ -359,14 +509,16 @@ This creates poor UX: uneven layouts, "Load More" buttons that appear/disappear,
 
 ```go
 import (
+ "github.com/nrfta/go-paging/cursor"
  "github.com/nrfta/go-paging/quotafill"
+ "github.com/nrfta/go-paging/sqlboiler"
 )
 
 func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*Organization], error) {
- // 1. Create base paginator (cursor or offset)
- encoder := cursor.NewCompositeCursorEncoder(func(o *models.Organization) map[string]any {
-  return map[string]any{"created_at": o.CreatedAt, "id": o.ID}
- })
+ // 1. Create schema (single source of truth)
+ schema := cursor.NewSchema[*models.Organization]().
+  Field("created_at", "c", func(o *models.Organization) any { return o.CreatedAt }).
+  FixedField("id", cursor.DESC, "i", func(o *models.Organization) any { return o.ID })
 
  // 2. Create fetcher with database filters
  fetcher := sqlboiler.NewFetcher(
@@ -382,43 +534,29 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
   sqlboiler.CursorToQueryMods,
  )
 
- // 3. Fetch initial batch and create base paginator
- orderBy := []paging.OrderBy{
-  {Column: "created_at", Desc: true},
-  {Column: "id", Desc: true},
- }
- fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)  // N+1 automatic
-
- orgs, err := fetcher.Fetch(ctx, fetchParams)
- if err != nil {
-  return nil, err
- }
-
- basePaginator := cursor.New(page, encoder, orgs)
-
- // 4. Define authorization filter
+ // 3. Define authorization filter
  authFilter := func(ctx context.Context, orgs []*models.Organization) ([]*models.Organization, error) {
   return r.AuthzClient.FilterAuthorized(ctx, r.CurrentUser(ctx), orgs)
  }
 
- // 5. Wrap with quota-fill
- paginator := quotafill.New(basePaginator, authFilter, encoder,
+ // 4. Create quota-fill paginator (wraps fetcher + filter + schema)
+ paginator := quotafill.New(fetcher, authFilter, schema,
   quotafill.WithMaxIterations(5),
   quotafill.WithMaxRecordsExamined(100),
  )
 
- // 6. Paginate with quota-fill
+ // 5. Paginate with quota-fill
  result, err := paginator.Paginate(ctx, page)
  if err != nil {
   return nil, err
  }
 
- // 7. Log metadata for monitoring
+ // 6. Log metadata for monitoring
  if result.Metadata.SafeguardHit != nil {
   log.Warnf("Quota-fill safeguard hit: %s", *result.Metadata.SafeguardHit)
  }
 
- // 8. Build connection
+ // 7. Build connection
  edges := make([]*paging.Edge[*Organization], len(result.Nodes))
  nodes := make([]*Organization, len(result.Nodes))
  for i, org := range result.Nodes {
@@ -426,9 +564,9 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
   if err != nil {
    return nil, err
   }
-  cursor, _ := encoder.Encode(org)
+  cursorStr, _ := schema.Encode(org)
   edges[i] = &paging.Edge[*Organization]{
-   Cursor: *cursor,
+   Cursor: *cursorStr,
    Node:   domain,
   }
   nodes[i] = domain
@@ -446,8 +584,8 @@ func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs
 
 1. Initialize: `filteredItems = []`, `iteration = 0`
 2. Loop while `len(filteredItems) < requestedSize + 1` (N+1 pattern):
-   - Calculate `fetchSize = (remaining quota) × backoffMultiplier[iteration]`
-   - Fetch batch from base paginator
+   - Calculate `fetchSize = (remaining quota) x backoffMultiplier[iteration]`
+   - Fetch batch using fetcher with schema-derived params
    - Apply filter function
    - Append filtered items to results
    - Check safeguards (maxIterations, maxRecordsExamined, timeout)
@@ -468,7 +606,7 @@ Quota-fill uses Fibonacci-like multipliers `[1, 2, 3, 5, 8]` to optimize fetchin
 Three configurable safeguards prevent infinite loops and excessive load:
 
 ```go
-quotafill.New(paginator, filter, encoder,
+quotafill.New(fetcher, filter, schema,
  quotafill.WithMaxIterations(5),          // Default: 5
  quotafill.WithMaxRecordsExamined(100),   // Default: 100
  quotafill.WithTimeout(5 * time.Second),  // Default: 3s

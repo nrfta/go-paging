@@ -29,8 +29,8 @@ var _ = Describe("Security Tests", func() {
 		err := CleanupTables(ctx, container.DB)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Seed basic test data
-		userIDs, err = SeedUsers(ctx, container.DB, 25)
+		// Seed test data (100 users to ensure quota-fill safeguard tests have enough data)
+		userIDs, err = SeedUsers(ctx, container.DB, 100)
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = SeedPosts(ctx, container.DB, userIDs, 2) // 2 posts per user
@@ -155,7 +155,7 @@ var _ = Describe("Security Tests", func() {
 		Context("Query Mod Generation", func() {
 			It("should not allow SQL injection through sort columns", func() {
 				// SQLBoiler integration test - ensure no SQL injection through query mods
-				orderBy := []paging.OrderBy{
+				orderBy := []paging.Sort{
 					{Column: "created_at; DROP TABLE users; --", Desc: true},
 					{Column: "id' OR '1'='1", Desc: false},
 				}

@@ -1,8 +1,8 @@
 package sqlboiler_test
 
 import (
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/sqlboiler"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/sqlboiler"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

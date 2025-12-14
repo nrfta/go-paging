@@ -4,12 +4,12 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/cursor"
-	"github.com/nrfta/go-paging/offset"
-	"github.com/nrfta/go-paging/quotafill"
-	"github.com/nrfta/go-paging/sqlboiler"
-	"github.com/nrfta/go-paging/tests/models"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/cursor"
+	"github.com/nrfta/paging-go/v2/offset"
+	"github.com/nrfta/paging-go/v2/quotafill"
+	"github.com/nrfta/paging-go/v2/sqlboiler"
+	"github.com/nrfta/paging-go/v2/tests/models"
 
 	"github.com/aarondl/sqlboiler/v4/queries/qm"
 

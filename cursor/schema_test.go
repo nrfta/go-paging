@@ -3,8 +3,8 @@ package cursor_test
 import (
 	"time"
 
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/cursor"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/cursor"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

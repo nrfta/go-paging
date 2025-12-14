@@ -1,15 +1,35 @@
-# Migration Guide: v0.3.0 to v1.0
+# Migration Guide: v0.3.0 to v2.0
 
-This guide helps you migrate from go-paging v0.3.0 to the new v1.0 modular architecture.
+This guide helps you migrate from go-paging v0.3.0 to paging-go v2.0.
+
+## Overview
+
+v2.0 combines two major improvements:
+
+1. **Modular architecture** - Separate packages for offset, cursor, and quota-fill pagination
+2. **Repository rename** - Aligned with organizational naming standards: `go-paging` → `paging-go/v2`
+3. **API consistency** - Type rename: `OrderBy` → `Sort`
+4. **Schema pattern** - Ensures encoder/sort order consistency for cursor and quota-fill
+
+## Breaking Changes Summary
+
+| Change | Old (v0.3.0) | New (v2.0) |
+|--------|-------------|-----------|
+| **Module path** | `github.com/nrfta/go-paging` | `github.com/nrfta/paging-go/v2` |
+| **Constructor** | `paging.NewOffsetPaginator()` | `offset.New()` |
+| **Type** | `paging.OffsetPaginator` | `offset.Paginator` |
+| **Sort type** | `paging.OrderBy` | `paging.Sort` |
+| **Cursor encoding** | `paging.EncodeOffsetCursor()` | `offset.EncodeCursor()` |
 
 ## Quick Summary
 
 **What you need to change:**
 
-1. Add import: `"github.com/nrfta/go-paging/offset"`
-2. Change: `paging.NewOffsetPaginator(...)` → `offset.New(...)`
-3. Change: `paging.OffsetPaginator` → `offset.Paginator`
-4. **New (Recommended):** Use `offset.BuildConnection()` to eliminate boilerplate
+1. Update imports: `"github.com/nrfta/go-paging"` → `"github.com/nrfta/paging-go/v2/offset"`
+2. Change constructor: `paging.NewOffsetPaginator(...)` → `offset.New(...)`
+3. Change type: `paging.OffsetPaginator` → `offset.Paginator`
+4. Rename sort type: `paging.OrderBy` → `paging.Sort`
+5. **New (Recommended):** Use `offset.BuildConnection()` to eliminate 60-80% of boilerplate
 
 **What stays the same:**
 
@@ -54,8 +74,8 @@ Add the offset package import:
 
 ```go
 import (
-    "github.com/nrfta/go-paging"
-    "github.com/nrfta/go-paging/offset"  // Add this
+    "github.com/nrfta/paging-go/v2"
+    "github.com/nrfta/paging-go/v2/offset"  // Add this
 )
 ```
 
@@ -185,7 +205,7 @@ import (
     "context"
     "database/sql"
 
-    "github.com/nrfta/go-paging"
+    "github.com/nrfta/paging-go/v2"
     "github.com/my-user/my-app/models"
 )
 
@@ -237,8 +257,8 @@ import (
     "context"
     "database/sql"
 
-    "github.com/nrfta/go-paging"
-    "github.com/nrfta/go-paging/offset"
+    "github.com/nrfta/paging-go/v2"
+    "github.com/nrfta/paging-go/v2/offset"
     "github.com/my-user/my-app/models"
 )
 
@@ -343,7 +363,7 @@ if page != nil && page.After != nil {
 fetchParams := paging.FetchParams{
     Limit:   limit + 1,  // Manual N+1
     Cursor:  cursorPos,
-    OrderBy: []paging.OrderBy{
+    OrderBy: []paging.Sort{
         {Column: "created_at", Desc: true},
         {Column: "id", Desc: true},
     },
@@ -355,11 +375,11 @@ users, _ := fetcher.Fetch(ctx, fetchParams)
 
 ```go
 // ✅ N+1 handled automatically!
-orderBy := []paging.OrderBy{
+sorts := []paging.Sort{
     {Column: "created_at", Desc: true},
     {Column: "id", Desc: true},
 }
-fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)
+fetchParams := cursor.BuildFetchParams(page, encoder, sorts)
 users, _ := fetcher.Fetch(ctx, fetchParams)
 ```
 
@@ -409,7 +429,7 @@ type UserEdge {
 ```yaml
 models:
   UserConnection:
-    model: github.com/nrfta/go-paging.Connection[github.com/my-user/my-app/domain.User]
+    model: github.com/nrfta/paging-go/v2.Connection[github.com/my-user/my-app/domain.User]
 ```
 
 ## Advanced: SQLBoiler Adapter (for library authors)
@@ -445,11 +465,13 @@ The new modular architecture provides:
 
 ## Migration Checklist
 
-- [ ] Update imports to include `"github.com/nrfta/go-paging/offset"`
+- [ ] Update module import: `"github.com/nrfta/go-paging"` → `"github.com/nrfta/paging-go/v2"`
+- [ ] Update subpackage imports: `"github.com/nrfta/go-paging/offset"` → `"github.com/nrfta/paging-go/v2/offset"`
 - [ ] Replace `paging.NewOffsetPaginator()` with `offset.New()`
-- [ ] Update type references from `paging.OffsetPaginator` to `offset.Paginator`
+- [ ] Update type references: `paging.OffsetPaginator` → `offset.Paginator`
+- [ ] Rename sort type: `paging.OrderBy` → `paging.Sort`
 - [ ] Replace manual edge/node building with `offset.BuildConnection()`
-- [ ] Update cursor function calls (if used): `paging.EncodeOffsetCursor` → `offset.EncodeCursor`
+- [ ] Update cursor functions (if used): `paging.EncodeOffsetCursor` → `offset.EncodeCursor`
 - [ ] Run tests to verify everything works
 - [ ] Enjoy 60-80% less boilerplate code! 🎉
 

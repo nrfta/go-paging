@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/aarondl/sqlboiler/v4/queries/qm"
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/offset"
-	"github.com/nrfta/go-paging/sqlboiler"
-	"github.com/nrfta/go-paging/tests/models"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/offset"
+	"github.com/nrfta/paging-go/v2/sqlboiler"
+	"github.com/nrfta/paging-go/v2/tests/models"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

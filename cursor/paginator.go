@@ -3,7 +3,7 @@ package cursor
 import (
 	"fmt"
 
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 )
 
 const defaultLimitVal = 50

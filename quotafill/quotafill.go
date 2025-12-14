@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/cursor"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/cursor"
 )
 
 // Default configuration values

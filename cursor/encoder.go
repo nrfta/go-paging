@@ -50,7 +50,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 )
 
 // CompositeCursorEncoder encodes multiple column values into an opaque cursor string.

@@ -14,7 +14,7 @@ package offset
 import (
 	"strings"
 
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 
 	"github.com/aarondl/sqlboiler/v4/queries/qm"
 )

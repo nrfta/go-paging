@@ -1,4 +1,4 @@
-# go-paging ![](https://github.com/nrfta/go-paging/workflows/CI/badge.svg)
+# paging-go ![](https://github.com/nrfta/paging-go/workflows/CI/badge.svg)
 
 Type-safe Relay pagination for [SQLBoiler](https://github.com/aarondl/sqlboiler) and [gqlgen](https://github.com/99designs/gqlgen/).
 
@@ -7,7 +7,7 @@ Supports three pagination strategies: offset (traditional LIMIT/OFFSET), cursor 
 ## Install
 
 ```sh
-go get -u "github.com/nrfta/go-paging"
+go get -u "github.com/nrfta/paging-go/v2"
 ```
 
 ## Migration from v0.3.0
@@ -15,7 +15,7 @@ go get -u "github.com/nrfta/go-paging"
 Breaking changes in v1.0 moved from monolithic API to modular package structure. See [MIGRATION.md](./MIGRATION.md) for details.
 
 Quick summary:
-1. Add strategy import: `"github.com/nrfta/go-paging/offset"`
+1. Add strategy import: `"github.com/nrfta/paging-go/v2/offset"`
 2. Change constructor: `paging.NewOffsetPaginator()` → `offset.New()`
 3. Use builder: `offset.BuildConnection()` eliminates 60-80% of boilerplate
 
@@ -29,9 +29,9 @@ Add [this schema](./schema.graphql) and configure gqlgen:
 # gqlgen.yml
 models:
   PageArgs:
-    model: github.com/nrfta/go-paging.PageArgs
+    model: github.com/nrfta/paging-go/v2.PageArgs
   PageInfo:
-    model: github.com/nrfta/go-paging.PageInfo
+    model: github.com/nrfta/paging-go/v2.PageInfo
 ```
 
 ### PageInfo Resolver
@@ -39,7 +39,7 @@ models:
 ```go
 package resolvers
 
-import "github.com/nrfta/go-paging"
+import "github.com/nrfta/paging-go/v2"
 
 func (r *RootResolver) PageInfo() PageInfoResolver {
   return paging.NewPageInfoResolver()
@@ -55,8 +55,8 @@ package resolvers
 
 import (
   "context"
-  "github.com/nrfta/go-paging"
-  "github.com/nrfta/go-paging/offset"
+  "github.com/nrfta/paging-go/v2"
+  "github.com/nrfta/paging-go/v2/offset"
   "github.com/my-user/my-app/models"
 )
 
@@ -135,8 +135,8 @@ High-performance keyset pagination using composite indexes. Provides O(1) perfor
 
 ```go
 import (
-  "github.com/nrfta/go-paging/cursor"
-  "github.com/nrfta/go-paging/sqlboiler"
+  "github.com/nrfta/paging-go/v2/cursor"
+  "github.com/nrfta/paging-go/v2/sqlboiler"
 )
 
 func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
@@ -337,9 +337,9 @@ This creates poor UX: uneven layouts, unpredictable "Load More" behavior, multip
 
 ```go
 import (
-  "github.com/nrfta/go-paging/cursor"
-  "github.com/nrfta/go-paging/quotafill"
-  "github.com/nrfta/go-paging/sqlboiler"
+  "github.com/nrfta/paging-go/v2/cursor"
+  "github.com/nrfta/paging-go/v2/quotafill"
+  "github.com/nrfta/paging-go/v2/sqlboiler"
 )
 
 func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*Organization], error) {

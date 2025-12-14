@@ -1,4 +1,4 @@
-module github.com/nrfta/go-paging
+module github.com/nrfta/paging-go/v2
 
 go 1.24.9
 

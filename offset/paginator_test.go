@@ -1,8 +1,8 @@
 package offset_test
 
 import (
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/offset"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/offset"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

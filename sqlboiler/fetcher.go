@@ -32,7 +32,7 @@ import (
 	"context"
 
 	"github.com/aarondl/sqlboiler/v4/queries/qm"
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 )
 
 // QueryFunc executes a SQLBoiler query and returns results.

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/aarondl/sqlboiler/v4/queries/qm"
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 )
 
 // OffsetToQueryMods converts FetchParams into SQLBoiler query mods for offset pagination.

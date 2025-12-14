@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/nrfta/go-paging/offset"
+	"github.com/nrfta/paging-go/v2/offset"
 )
 
 var _ = Describe("Cursor Encoding/Decoding", func() {

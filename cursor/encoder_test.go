@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/nrfta/go-paging/cursor"
+	"github.com/nrfta/paging-go/v2/cursor"
 )
 
 // testUser is a simple test struct for cursor encoding

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nrfta/go-paging"
-	"github.com/nrfta/go-paging/cursor"
-	"github.com/nrfta/go-paging/quotafill"
+	"github.com/nrfta/paging-go/v2"
+	"github.com/nrfta/paging-go/v2/cursor"
+	"github.com/nrfta/paging-go/v2/quotafill"
 )
 
 func TestCursorGeneration(t *testing.T) {

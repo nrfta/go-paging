@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 )
 
 // Direction represents the sort direction for a field.

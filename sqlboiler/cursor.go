@@ -7,7 +7,7 @@ import (
 
 	"github.com/aarondl/sqlboiler/v4/queries"
 	"github.com/aarondl/sqlboiler/v4/queries/qm"
-	"github.com/nrfta/go-paging"
+	"github.com/nrfta/paging-go/v2"
 )
 
 // CursorToQueryMods converts FetchParams into SQLBoiler query mods for cursor-based pagination.

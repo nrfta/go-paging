@@ -1,30 +1,48 @@
 package paging
 
 // PageArgs represents pagination query parameters.
-// It follows the Relay cursor pagination specification with First (page size)
-// and After (cursor) fields, plus optional sorting configuration.
+// It follows the Relay cursor pagination specification with First (page size),
+// After (cursor), and SortBy (sort configuration) fields.
 type PageArgs struct {
-	First      *int    `json:"first,omitempty"`
-	After      *string `json:"after,omitempty"`
-	sortByCols []string
-	isDesc     bool
+	First  *int    `json:"first,omitempty"`
+	After  *string `json:"after,omitempty"`
+	SortBy []Sort  `json:"sortBy,omitempty"`
 }
 
-// WithSortBy configures the sort columns and direction for pagination.
+// WithSortBy configures a single sort column and direction for pagination.
 // It modifies the PageArgs and returns it for method chaining.
 // If pa is nil, a new PageArgs is created.
 //
 // Example:
 //
-//	args := WithSortBy(nil, true, "created_at", "id")
-//	// Results in ORDER BY created_at, id DESC
-func WithSortBy(pa *PageArgs, isDesc bool, cols ...string) *PageArgs {
+//	args := WithSortBy(nil, "created_at", true)
+//	// Results in ORDER BY created_at DESC
+func WithSortBy(pa *PageArgs, column string, desc bool) *PageArgs {
 	if pa == nil {
 		pa = &PageArgs{}
 	}
 
-	pa.isDesc = isDesc
-	pa.sortByCols = cols
+	pa.SortBy = []Sort{{Column: column, Desc: desc}}
+	return pa
+}
+
+// WithMultiSort configures multiple sort columns with individual directions.
+// It modifies the PageArgs and returns it for method chaining.
+// If pa is nil, a new PageArgs is created.
+//
+// Example:
+//
+//	args := WithMultiSort(nil,
+//	    Sort{Column: "created_at", Desc: true},
+//	    Sort{Column: "name", Desc: false},
+//	)
+//	// Results in ORDER BY created_at DESC, name ASC
+func WithMultiSort(pa *PageArgs, sorts ...Sort) *PageArgs {
+	if pa == nil {
+		pa = &PageArgs{}
+	}
+
+	pa.SortBy = sorts
 	return pa
 }
 
@@ -38,14 +56,9 @@ func (pa *PageArgs) GetAfter() *string {
 	return pa.After
 }
 
-// SortByCols returns the list of columns to sort by.
-func (pa *PageArgs) SortByCols() []string {
-	return pa.sortByCols
-}
-
-// IsDesc returns whether sorting should be in descending order.
-func (pa *PageArgs) IsDesc() bool {
-	return pa.isDesc
+// GetSortBy returns the list of sort specifications.
+func (pa *PageArgs) GetSortBy() []Sort {
+	return pa.SortBy
 }
 
 // PageInfo contains metadata about a paginated result set.

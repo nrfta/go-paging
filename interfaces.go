@@ -97,11 +97,11 @@ type FetchParams struct {
 	Filters map[string]any
 
 	// OrderBy specifies the sort order for results.
-	OrderBy []OrderBy
+	OrderBy []Sort
 }
 
-// OrderBy represents a sort directive for query results.
-type OrderBy struct {
+// Sort represents a sort directive for query results.
+type Sort struct {
 	// Column is the name of the column to sort by.
 	Column string
 

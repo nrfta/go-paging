@@ -23,7 +23,7 @@ type Connection[T any] struct {
 
 	// Nodes provides direct access to the items without cursor overhead.
 	// Use this for simpler queries that only need the data.
-	Nodes []*T `json:"nodes"`
+	Nodes []T `json:"nodes"`
 
 	// PageInfo contains pagination metadata (hasNextPage, cursors, etc.)
 	PageInfo PageInfo `json:"pageInfo"`
@@ -46,7 +46,7 @@ type Edge[T any] struct {
 	Cursor string `json:"cursor"`
 
 	// Node is the actual data item.
-	Node *T `json:"node"`
+	Node T `json:"node"`
 }
 
 // BuildConnection creates a Connection from a slice of source items.
@@ -81,10 +81,10 @@ func BuildConnection[From any, To any](
 	items []From,
 	pageInfo PageInfo,
 	cursorEncoder func(index int, item From) string,
-	transform func(From) (*To, error),
+	transform func(From) (To, error),
 ) (*Connection[To], error) {
 	conn := &Connection[To]{
-		Nodes:    make([]*To, 0, len(items)),
+		Nodes:    make([]To, 0, len(items)),
 		Edges:    make([]Edge[To], 0, len(items)),
 		PageInfo: pageInfo,
 	}

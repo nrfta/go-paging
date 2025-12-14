@@ -1,16 +1,8 @@
 # go-paging ![](https://github.com/nrfta/go-paging/workflows/CI/badge.svg)
 
-Modern Go pagination for [SQLBoiler](https://github.com/aarondl/sqlboiler) and [gqlgen](https://github.com/99designs/gqlgen/) (GraphQL).
+Type-safe Relay pagination for [SQLBoiler](https://github.com/aarondl/sqlboiler) and [gqlgen](https://github.com/99designs/gqlgen/).
 
-**New in v2:** Built-in Connection/Edge builders eliminate 60-80% of boilerplate code.
-
-## Features
-
-- **Relay-compliant GraphQL pagination** with automatic Connection/Edge building
-- **Type-safe transformations** from database models to domain models
-- **Modular architecture** with pluggable pagination strategies (offset + cursor)
-- **High-performance cursor pagination** for large datasets (O(1) performance)
-- **SQLBoiler integration** with query mod support
+Supports three pagination strategies: offset (traditional LIMIT/OFFSET), cursor (keyset pagination), and quota-fill (filter-aware iterative fetching). All strategies provide automatic Connection/Edge building and eliminate boilerplate through generic builders.
 
 ## Install
 
@@ -18,11 +10,20 @@ Modern Go pagination for [SQLBoiler](https://github.com/aarondl/sqlboiler) and [
 go get -u "github.com/nrfta/go-paging"
 ```
 
+## Migration from v0.3.0
+
+Breaking changes in v1.0 moved from monolithic API to modular package structure. See [MIGRATION.md](./MIGRATION.md) for details.
+
+Quick summary:
+1. Add strategy import: `"github.com/nrfta/go-paging/offset"`
+2. Change constructor: `paging.NewOffsetPaginator()` → `offset.New()`
+3. Use builder: `offset.BuildConnection()` eliminates 60-80% of boilerplate
+
 ## Quick Start
 
-### 1. Add GraphQL Schema
+### GraphQL Setup
 
-Add [this GraphQL schema](./schema.graphql) to your project, and configure gqlgen:
+Add [this schema](./schema.graphql) and configure gqlgen:
 
 ```yaml
 # gqlgen.yml
@@ -33,7 +34,7 @@ models:
     model: github.com/nrfta/go-paging.PageInfo
 ```
 
-### 2. Add PageInfo Resolver
+### PageInfo Resolver
 
 ```go
 package resolvers
@@ -41,280 +42,190 @@ package resolvers
 import "github.com/nrfta/go-paging"
 
 func (r *RootResolver) PageInfo() PageInfoResolver {
- return paging.NewPageInfoResolver()
+  return paging.NewPageInfoResolver()
 }
 ```
 
-### 3. Use in Resolvers
+### Basic Resolver Example
 
-**GraphQL Schema:**
-
-```graphql
-type User {
-  id: ID!
-  name: String!
-  email: String!
-}
-
-type UserEdge {
-  cursor: String!
-  node: User!
-}
-
-type UserConnection {
-  edges: [UserEdge!]!
-  nodes: [User!]!
-  pageInfo: PageInfo!
-}
-
-type Query {
-  users(page: PageArgs): UserConnection!
-}
-```
-
-**Resolver (New API - Recommended):**
+Using offset pagination (simplest entry point):
 
 ```go
 package resolvers
 
 import (
- "context"
-
- "github.com/nrfta/go-paging"
- "github.com/nrfta/go-paging/offset"
-
- "github.com/my-user/my-app/models"
+  "context"
+  "github.com/nrfta/go-paging"
+  "github.com/nrfta/go-paging/offset"
+  "github.com/my-user/my-app/models"
 )
 
-func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[User], error) {
- // Get total count
- totalCount, err := models.Users().Count(ctx, r.DB)
- if err != nil {
-  return nil, err
- }
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
+  // Get total count
+  totalCount, err := models.Users().Count(ctx, r.DB)
+  if err != nil {
+    return nil, err
+  }
 
- // Create paginator
- paginator := offset.New(page, totalCount)
+  // Create paginator and fetch
+  paginator := offset.New(page, totalCount)
+  dbUsers, err := models.Users(paginator.QueryMods()...).All(ctx, r.DB)
+  if err != nil {
+    return nil, err
+  }
 
- // Fetch records
- dbUsers, err := models.Users(paginator.QueryMods()...).All(ctx, r.DB)
- if err != nil {
-  return nil, err
- }
-
- // Build connection with automatic edge/node creation - ONE LINE!
- return offset.BuildConnection(paginator, dbUsers, toDomainUser)
+  // Build connection with automatic edge/node creation
+  return offset.BuildConnection(paginator, dbUsers, toDomainUser)
 }
 
-// Transform function (database model → domain model)
+// Transform database model to domain model
 func toDomainUser(db *models.User) (*User, error) {
- return &User{
-  ID:    db.ID,
-  Name:  db.Name,
-  Email: db.Email,
- }, nil
+  return &User{ID: db.ID, Name: db.Name, Email: db.Email}, nil
 }
 ```
 
-**That's it!** No manual loops, no cursor encoding, no edge building boilerplate.
+## Pagination Strategies
 
-## Migration from v1
+### Offset Pagination
 
-See [MIGRATION.md](./MIGRATION.md) for details.
+Traditional LIMIT/OFFSET with page numbers. Best for small-to-medium datasets where users need page navigation.
 
-**Quick changes:**
+**Use cases:**
+- Admin UIs with page numbers
+- Reports and exports
+- Datasets under 10,000 records
+- Total count required
 
-1. Import: `"github.com/nrfta/go-paging/offset"`
-2. Change: `paging.NewOffsetPaginator()` → `offset.New()`
-3. Use: `offset.BuildConnection()` to eliminate boilerplate
+**Performance:**
+- Page 1: Fast (5ms)
+- Page 1000: Slow (1000ms+) - database scans all preceding rows
 
-## Advanced Usage
-
-### Custom Page Size
+**Custom configuration:**
 
 ```go
-// Default limit is 50
-paginator := offset.New(pageArgs, totalCount)
-
 // Custom default limit
 defaultLimit := 25
 paginator := offset.New(pageArgs, totalCount, &defaultLimit)
+
+// Single column sort
+pageArgs := paging.WithSortBy(nil, "created_at", true)
+
+// Multi-column sort
+pageArgs := paging.WithMultiSort(nil,
+  paging.Sort{Column: "created_at", Desc: true},
+  paging.Sort{Column: "name", Desc: false},
+  paging.Sort{Column: "id", Desc: true},
+)
 ```
 
-### Custom Sorting
+### Cursor Pagination
 
-```go
-// Sort by created_at descending
-pageArgs := paging.WithSortBy(nil, true, "created_at")
+High-performance keyset pagination using composite indexes. Provides O(1) performance regardless of page depth.
 
-// Sort by multiple columns
-pageArgs := paging.WithSortBy(nil, true, "created_at", "id")
-```
+**Use cases:**
+- Large datasets (100,000+ records)
+- Infinite scroll / "Load More" UIs
+- Real-time feeds
+- Performance-critical applications
 
-### Direct Query Mods (SQLBoiler)
+**Performance:**
+- All pages: Fast (5ms) - constant time regardless of depth
 
-If you prefer to work with SQLBoiler query mods directly:
-
-```go
-paginator := offset.New(pageArgs, totalCount)
-mods := paginator.QueryMods()
-
-// Add custom filters
-mods = append(mods, qm.Where("status = ?", "active"))
-
-records, err := models.Users(mods...).All(ctx, db)
-```
-
-## Cursor-Based Pagination
-
-For high-performance pagination of large datasets (millions of records), use cursor-based (keyset) pagination instead of offset.
-
-**Key Benefits:**
-- **O(1) performance** - Page 1 and page 1,000,000 have the same query time
-- **Consistent results** - No duplicate/missing records when data changes during pagination
-- **Index-friendly** - Uses composite indexes for fast lookups
-
-### Basic Usage
+**Implementation:**
 
 ```go
 import (
-    "github.com/nrfta/go-paging/cursor"
-    "github.com/nrfta/go-paging/sqlboiler"
+  "github.com/nrfta/go-paging/cursor"
+  "github.com/nrfta/go-paging/sqlboiler"
 )
 
-func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[User], error) {
-    // Create encoder (defines cursor structure)
-    encoder := cursor.NewCompositeCursorEncoder(func(u *models.User) map[string]any {
-        return map[string]any{
-            "created_at": u.CreatedAt,
-            "id":         u.ID,
-        }
-    })
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
+  // 1. Define schema (cursor fields and ordering)
+  schema := cursor.NewSchema[*models.User]().
+    Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+    FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
 
-    // Create fetcher with cursor strategy
-    fetcher := sqlboiler.NewFetcher(
-        func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-            // ✅ Add filters only - NO qm.OrderBy here!
-            mods = append([]qm.QueryMod{
-                qm.Where("is_active = ?", true),
-            }, mods...)
-            return models.Users(mods...).All(ctx, r.DB)
-        },
-        func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
-            return 0, nil // Count not used for cursor pagination
-        },
-        sqlboiler.CursorToQueryMods, // Use cursor strategy
-    )
-
-    // Decode cursor from PageArgs
-    var cursorPos *paging.CursorPosition
-    if page != nil && page.After != nil {
-        cursorPos, _ = encoder.Decode(*page.After)
-    }
-
-    // Fetch with pagination (N+1 pattern for accurate HasNextPage)
-    limit := 10
-    if page != nil && page.First != nil {
-        limit = *page.First
-    }
-
-    fetchParams := paging.FetchParams{
-        Limit:   limit + 1, // Fetch one extra to detect if there's a next page
-        Cursor:  cursorPos,
-        OrderBy: []paging.OrderBy{
-            {Column: "created_at", Desc: true},
-            {Column: "id", Desc: true},
-        },
-    }
-    users, err := fetcher.Fetch(ctx, fetchParams)
-    if err != nil {
-        return nil, err
-    }
-
-    // Build connection (paginator automatically trims to limit if we got limit+1)
-    paginator := cursor.New(page, encoder, users)
-    return cursor.BuildConnection(paginator, users, encoder, toDomainUser)
-}
-```
-
-### N+1 Pattern for Accurate HasNextPage
-
-Cursor pagination uses the **N+1 pattern** to accurately determine if there's a next page:
-
-1. **Fetch LIMIT + 1** records from the database
-2. If you get LIMIT + 1 records, `HasNextPage = true`
-3. The paginator automatically trims to LIMIT records for the response
-
-```go
-limit := 10
-fetchParams := paging.FetchParams{
-    Limit: limit + 1,  // Fetch one extra for HasNextPage detection
-    // ...
-}
-users, _ := fetcher.Fetch(ctx, fetchParams)
-
-paginator := cursor.New(page, encoder, users)  // Detects N+1, trims to 10
-conn, _ := cursor.BuildConnection(paginator, users, encoder, transform)
-// conn.Nodes has 10 items, conn.PageInfo.HasNextPage() is accurate
-```
-
-### ⚠️ Critical: ORDER BY Rules
-
-**DO NOT add `qm.OrderBy()` to your query mods when using cursor pagination.** This will cause duplicate records and data corruption.
-
-**❌ WRONG - Causes duplicates:**
-```go
-fetcher := sqlboiler.NewFetcher(
+  // 2. Create fetcher with cursor strategy
+  fetcher := sqlboiler.NewFetcher(
     func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-        // ❌ DO NOT DO THIS - conflicts with cursor's ORDER BY
-        mods = append([]qm.QueryMod{
-            qm.OrderBy("name ASC"),
-        }, mods...)
-        return models.Users(mods...).All(ctx, r.DB)
+      // Add filters only - NO qm.OrderBy here
+      mods = append([]qm.QueryMod{
+        qm.Where("is_active = ?", true),
+      }, mods...)
+      return models.Users(mods...).All(ctx, r.DB)
     },
-    countFunc,
+    func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+      return 0, nil // Count not used for cursor pagination
+    },
     sqlboiler.CursorToQueryMods,
-)
-```
+  )
 
-**Why?** Cursor pagination generates a WHERE clause like:
-```sql
-WHERE (created_at < ? OR (created_at = ? AND id < ?))
-```
+  // 3. Build fetch params with automatic N+1
+  fetchParams, err := cursor.BuildFetchParams(page, schema)
+  if err != nil {
+    return nil, err
+  }
 
-This WHERE clause **assumes** `created_at` and `id` are the primary sort columns. If you add `ORDER BY name ASC`, the actual query becomes:
-```sql
-ORDER BY name ASC, created_at DESC, id DESC
-```
+  // 4. Fetch data
+  users, err := fetcher.Fetch(ctx, fetchParams)
+  if err != nil {
+    return nil, err
+  }
 
-Now `name` is the primary sort, but the WHERE clause still filters by `created_at`/`id` → **wrong results and duplicates!**
+  // 5. Create paginator (trims to requested limit)
+  paginator, err := cursor.New(page, schema, users)
+  if err != nil {
+    return nil, err
+  }
 
-**✅ CORRECT - Define sorting in FetchParams:**
-```go
-fetcher := sqlboiler.NewFetcher(
-    func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
-        // ✅ Filters only - sorting handled by FetchParams
-        mods = append([]qm.QueryMod{
-            qm.Where("is_active = ?", true),
-        }, mods...)
-        return models.Users(mods...).All(ctx, r.DB)
-    },
-    countFunc,
-    sqlboiler.CursorToQueryMods,
-)
-
-// ✅ Define sorting here
-fetchParams := paging.FetchParams{
-    OrderBy: []paging.OrderBy{
-        {Column: "name", Desc: false},
-        {Column: "id", Desc: false},  // Always include unique column last
-    },
+  // 6. Build connection
+  return cursor.BuildConnection(paginator, users, toDomainUser)
 }
 ```
 
-### Required Database Index
+**Critical: ORDER BY rules**
 
-For optimal performance, create a composite index matching your sort columns:
+ORDER BY clauses must be defined in `FetchParams.OrderBy`, not in query mods. Adding `qm.OrderBy()` to the fetcher causes duplicate records and incorrect results.
+
+**Why:** Cursor pagination generates WHERE clauses based on sort columns. If WHERE filters by `created_at` but ORDER BY sorts by `name`, the query returns wrong results.
+
+```go
+// WRONG - Causes duplicates
+fetcher := sqlboiler.NewFetcher(
+  func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+    mods = append([]qm.QueryMod{
+      qm.OrderBy("name ASC"), // Conflicts with cursor's ORDER BY
+    }, mods...)
+    return models.Users(mods...).All(ctx, r.DB)
+  },
+  countFunc,
+  sqlboiler.CursorToQueryMods,
+)
+
+// CORRECT - Define sorting in FetchParams
+fetcher := sqlboiler.NewFetcher(
+  func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+    mods = append([]qm.QueryMod{
+      qm.Where("is_active = ?", true),
+    }, mods...)
+    return models.Users(mods...).All(ctx, r.DB)
+  },
+  countFunc,
+  sqlboiler.CursorToQueryMods,
+)
+
+// Define sorting here
+fetchParams := paging.FetchParams{
+  OrderBy: []paging.Sort{
+    {Column: "name", Desc: false},
+    {Column: "id", Desc: false},
+  },
+}
+```
+
+**Required database index:**
+
+Create a composite index matching sort columns:
 
 ```sql
 -- For sorting by (created_at DESC, id DESC)
@@ -324,20 +235,301 @@ CREATE INDEX idx_users_cursor ON users(created_at DESC, id DESC);
 CREATE INDEX idx_users_name_cursor ON users(name ASC, id ASC);
 ```
 
-### Cursor vs Offset: When to Use Which
+### Schema Pattern
+
+Schema provides a single source of truth for cursor encoding, sort ordering, security, and fixed fields.
+
+```go
+var userSchema = cursor.NewSchema[*models.User]().
+  // Fixed field: Always sort by tenant_id first (for partitioning)
+  FixedField("tenant_id", cursor.ASC, "t", func(u *models.User) any {
+    return u.TenantID
+  }).
+  // User-sortable fields with short cursor keys
+  Field("name", "n", func(u *models.User) any { return u.Name }).
+  Field("email", "e", func(u *models.User) any { return u.Email }).
+  Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
+  // Fixed field: Always append ID for uniqueness
+  FixedField("id", cursor.DESC, "i", func(u *models.User) any {
+    return u.ID
+  })
+```
+
+**Benefits:**
+- **Security:** Cursors use short keys (`{"n": "Alice", "i": "123"}`) instead of column names
+- **Type safety:** Schema validates sort fields before encoding
+- **Automatic fixed fields:** Ensures required fields are always included in ORDER BY
+- **Dynamic sorting:** Users can choose sort fields at runtime
+- **JOIN support:** Use qualified column names without exposing them in cursors
+
+**Multi-tenant with fixed prefix:**
+
+```go
+var userSchema = cursor.NewSchema[*models.User]().
+  FixedField("tenant_id", cursor.ASC, "t", func(u *models.User) any {
+    return u.TenantID
+  }).
+  Field("name", "n", func(u *models.User) any { return u.Name }).
+  FixedField("id", cursor.DESC, "i", func(u *models.User) any {
+    return u.ID
+  })
+
+// ORDER BY: tenant_id ASC, name DESC, id DESC
+// Cursor: {"t": 42, "n": "Alice", "i": "123"}
+// Efficient with (tenant_id, name, id) composite index
+```
+
+**JOIN query example:**
+
+```go
+type UserWithPost struct {
+  UserID        string
+  UserName      string
+  PostID        string
+  PostCreatedAt time.Time
+}
+
+var joinSchema = cursor.NewSchema[*UserWithPost]().
+  Field("posts.created_at", "pc", func(uwp *UserWithPost) any {
+    return uwp.PostCreatedAt
+  }).
+  Field("users.name", "un", func(uwp *UserWithPost) any {
+    return uwp.UserName
+  }).
+  FixedField("posts.id", cursor.DESC, "pi", func(uwp *UserWithPost) any {
+    return uwp.PostID
+  })
+
+// ORDER BY: posts.created_at DESC, users.name ASC, posts.id DESC
+// Cursor: {"pc": "2024-01-01", "un": "Alice", "pi": "post-123"}
+// No column name ambiguity, no schema leakage
+```
+
+**N+1 pattern:**
+
+All strategies use N+1 pattern to detect next page availability:
+1. Fetch LIMIT + 1 records
+2. If result has LIMIT + 1 records, `HasNextPage = true`
+3. Paginator trims to LIMIT for response
+
+This is handled automatically - no manual +1 required.
+
+### Quota-Fill Pagination
+
+Iteratively fetches batches until requested page size is filled. Solves inconsistent page sizes when applying authorization filters or per-item filtering.
+
+**Problem:** Standard pagination with filtering creates inconsistent page sizes:
+
+```go
+// Request 10 items, fetch 10 from DB
+users, _ := fetcher.Fetch(ctx, limit: 10)
+
+// Apply authorization filter - returns 3 items
+authorized := filterAuthorized(users)
+
+// User asked for 10, got 3 - inconsistent page size
+return authorized
+```
+
+This creates poor UX: uneven layouts, unpredictable "Load More" behavior, multiple clicks to see full page.
+
+**Solution:** Quota-fill iteratively fetches until quota is met:
+
+```go
+import (
+  "github.com/nrfta/go-paging/cursor"
+  "github.com/nrfta/go-paging/quotafill"
+  "github.com/nrfta/go-paging/sqlboiler"
+)
+
+func (r *queryResolver) Organizations(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*Organization], error) {
+  // 1. Create schema
+  schema := cursor.NewSchema[*models.Organization]().
+    Field("created_at", "c", func(o *models.Organization) any { return o.CreatedAt }).
+    FixedField("id", cursor.DESC, "i", func(o *models.Organization) any { return o.ID })
+
+  // 2. Create fetcher with database filters
+  fetcher := sqlboiler.NewFetcher(
+    func(ctx context.Context, mods ...qm.QueryMod) ([]*models.Organization, error) {
+      mods = append([]qm.QueryMod{
+        qm.Where("deleted_at IS NULL"), // Pre-filter in DB
+      }, mods...)
+      return models.Organizations(mods...).All(ctx, r.DB)
+    },
+    func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+      return 0, nil
+    },
+    sqlboiler.CursorToQueryMods,
+  )
+
+  // 3. Define authorization filter
+  authFilter := func(ctx context.Context, orgs []*models.Organization) ([]*models.Organization, error) {
+    return r.AuthzClient.FilterAuthorized(ctx, r.CurrentUser(ctx), orgs)
+  }
+
+  // 4. Create quota-fill paginator
+  paginator := quotafill.New(fetcher, authFilter, schema,
+    quotafill.WithMaxIterations(5),
+    quotafill.WithMaxRecordsExamined(100),
+  )
+
+  // 5. Paginate with quota-fill
+  result, err := paginator.Paginate(ctx, page)
+  if err != nil {
+    return nil, err
+  }
+
+  // 6. Log metadata for monitoring
+  if result.Metadata.SafeguardHit != nil {
+    log.Warnf("Quota-fill safeguard hit: %s", *result.Metadata.SafeguardHit)
+  }
+
+  // 7. Build connection
+  edges := make([]*paging.Edge[*Organization], len(result.Nodes))
+  nodes := make([]*Organization, len(result.Nodes))
+  for i, org := range result.Nodes {
+    domain, err := toDomainOrg(org)
+    if err != nil {
+      return nil, err
+    }
+    cursorStr, _ := schema.Encode(org)
+    edges[i] = &paging.Edge[*Organization]{
+      Cursor: *cursorStr,
+      Node:   domain,
+    }
+    nodes[i] = domain
+  }
+
+  return &paging.Connection[*Organization]{
+    Edges:    edges,
+    Nodes:    nodes,
+    PageInfo: result.PageInfo,
+  }, nil
+}
+```
+
+**Algorithm:**
+
+1. Initialize: `filteredItems = []`, `iteration = 0`
+2. Loop while `len(filteredItems) < requestedSize + 1`:
+   - Calculate `fetchSize = (remaining quota) × backoffMultiplier[iteration]`
+   - Fetch batch using fetcher
+   - Apply filter function
+   - Append filtered items to results
+   - Check safeguards (maxIterations, maxRecordsExamined, timeout)
+   - Break if no more data or safeguard triggered
+3. Trim to `requestedSize` if N+1 items fetched
+4. Return results with metadata
+
+**Adaptive backoff:**
+
+Uses Fibonacci-like multipliers `[1, 2, 3, 5, 8]` to optimize fetching:
+- Iteration 1: Fetch exactly what's needed (1×)
+- Iteration 2: Filter pass rate < 100%, overscan (2×)
+- Iteration 3+: Progressively larger overscan (3×, 5×, 8×)
+
+**Safeguards:**
+
+Prevent infinite loops and excessive load:
+
+```go
+quotafill.New(fetcher, filter, schema,
+  quotafill.WithMaxIterations(5),          // Default: 5
+  quotafill.WithMaxRecordsExamined(100),   // Default: 100
+  quotafill.WithTimeout(5 * time.Second),  // Default: 3s
+)
+```
+
+When triggered, partial results are returned with metadata indicating which safeguard was hit.
+
+**Metadata tracking:**
+
+Provides observability for performance monitoring:
+
+```go
+page, err := paginator.Paginate(ctx, pageArgs)
+
+fmt.Printf("Strategy: %s\n", page.Metadata.Strategy)               // "quotafill"
+fmt.Printf("Query Time: %dms\n", page.Metadata.QueryTimeMs)        // 42
+fmt.Printf("Items Examined: %d\n", page.Metadata.ItemsExamined)    // 15
+fmt.Printf("Iterations Used: %d\n", page.Metadata.IterationsUsed)  // 2
+if page.Metadata.SafeguardHit != nil {
+  fmt.Printf("Safeguard Hit: %s\n", *page.Metadata.SafeguardHit) // "max_iterations"
+}
+```
+
+**Performance tips:**
+
+1. Push filtering into database queries when possible:
+
+```go
+// Better: Pre-filter in database, quota-fill for edge cases
+fetcher := sqlboiler.NewFetcher(
+  func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+    mods = append([]qm.QueryMod{
+      qm.Where("is_active = ?", true),           // Database filter
+      qm.Where("department = ?", "engineering"), // Database filter
+    }, mods...)
+    return models.Users(mods...).All(ctx, db)
+  },
+  countFunc,
+  sqlboiler.CursorToQueryMods,
+)
+
+// Quota-fill only for authorization checks
+authFilter := func(ctx context.Context, users []*models.User) ([]*models.User, error) {
+  return authzClient.FilterAuthorized(ctx, currentUser, users)
+}
+```
+
+2. Monitor filter pass rates:
+   - 90% pass rate: Usually 1 iteration
+   - 50% pass rate: Usually 2 iterations
+   - 10% pass rate: May hit safeguards
+
+3. Set up alerts when safeguards trigger frequently.
+
+## Architecture
+
+```
+go-paging/
+├── connection.go          # Generic Connection[T] and Edge[T] types
+├── interfaces.go          # Core interfaces (Paginator[T], Fetcher[T], FilterFunc[T])
+├── models.go              # PageArgs, PageInfo, Metadata
+├── offset/                # Offset-based pagination
+│   ├── paginator.go       # Offset paginator + BuildConnection
+│   └── cursor.go          # Offset cursor encoding
+├── cursor/                # Cursor-based (keyset) pagination
+│   ├── paginator.go       # Cursor paginator + BuildConnection
+│   └── encoder.go         # Composite cursor encoding/decoding
+├── quotafill/             # Quota-fill pagination (decorator pattern)
+│   └── wrapper.go         # Wraps any paginator with iterative filtering
+└── sqlboiler/             # SQLBoiler ORM adapter
+    ├── fetcher.go         # Generic Fetcher[T]
+    ├── offset.go          # Offset query builder
+    └── cursor.go          # Cursor query builder
+```
+
+Modular architecture with clear separation:
+- ORM adapters (sqlboiler/) are generic and strategy-agnostic
+- Pagination strategies (offset/, cursor/) are independent packages
+- Decorators (quotafill/) wrap any paginator to add capabilities
+- Core types (connection.go, interfaces.go) shared across strategies
+
+## Comparison: Offset vs Cursor
 
 | Feature | Offset | Cursor |
 |---------|--------|--------|
-| **Performance on page 1** | Fast (5ms) | Fast (5ms) |
-| **Performance on page 1000** | Slow (1000ms+) | Fast (5ms) |
-| **Jump to page N** | ✅ Yes | ❌ No (forward-only) |
-| **Total count** | ✅ Yes | ❌ No |
-| **Consistent during writes** | ❌ Can skip/duplicate | ✅ Consistent |
-| **Best for** | Admin UIs, reports | Feeds, infinite scroll |
+| Performance on page 1 | Fast (5ms) | Fast (5ms) |
+| Performance on page 1000 | Slow (1000ms+) | Fast (5ms) |
+| Jump to page N | Yes | No (forward-only) |
+| Total count | Yes | No |
+| Consistent during writes | Can skip/duplicate | Consistent |
+| Best for | Admin UIs, reports | Feeds, infinite scroll |
 
 **Use offset when:**
-- You need page numbers (1, 2, 3...)
-- You need total count
+- Page numbers required (1, 2, 3...)
+- Total count needed
 - Dataset is small (< 10,000 records)
 - Users jump to specific pages
 
@@ -347,57 +539,10 @@ CREATE INDEX idx_users_name_cursor ON users(name ASC, id ASC);
 - Data changes frequently during pagination
 - Performance is critical
 
-## Architecture
-
-```
-go-paging/
-├── connection.go          # Generic Connection[T] and Edge[T] types
-├── interfaces.go          # Core pagination interfaces (Paginator[T], Fetcher[T])
-├── models.go              # PageArgs and PageInfo
-├── offset/                # Offset-based pagination
-│   ├── paginator.go       # Offset paginator + BuildConnection
-│   └── cursor.go          # Offset cursor encoding
-├── cursor/                # Cursor-based (keyset) pagination
-│   ├── paginator.go       # Cursor paginator + BuildConnection
-│   └── encoder.go         # Composite cursor encoding/decoding
-└── sqlboiler/             # SQLBoiler ORM adapter
-    ├── fetcher.go         # Generic Fetcher[T] (ORM integration)
-    ├── offset.go          # Offset query builder (strategy-specific)
-    └── cursor.go          # Cursor query builder (strategy-specific)
-```
-
-**Design Philosophy:**
-
-- **ORM adapters** (sqlboiler, gorm, etc.) are generic and strategy-agnostic
-- **Query builders** (offset, cursor) are strategy-specific
-- **Easy to extend:** Add new strategies without changing ORM adapters
-
-## Roadmap
-
-**Phase 1 (v2.0):** ✅
-
-- Connection/Edge builders
-- Modular architecture
-- Offset pagination
-
-**Phase 2 (Current):** ✅
-
-- Cursor-based pagination (keyset pagination)
-- High-performance for large datasets
-- O(1) complexity regardless of page depth
-- Forward pagination (After + First)
-
-**Phase 3 (Planned):**
-
-- Backward pagination (Before + Last) for cursor strategy
-- Quota-fill pagination wrapper
-- Authorization-aware filtering
-- Consistent page sizes with per-item filtering
-
 ## Contributing
 
-Contributions welcome! Please open an issue or PR.
+Contributions welcome. Open an issue or PR on GitHub.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE.md).
+[MIT License](LICENSE.md)

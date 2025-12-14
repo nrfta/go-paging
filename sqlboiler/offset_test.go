@@ -38,7 +38,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 
 		It("should add ORDER BY mod", func() {
 			params := paging.FetchParams{
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -53,7 +53,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 			params := paging.FetchParams{
 				Offset: 20,
 				Limit:  10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "id", Desc: true},
 				},
@@ -97,7 +97,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 			params := paging.FetchParams{
 				Offset:  20,
 				Limit:   10,
-				OrderBy: []paging.OrderBy{},
+				OrderBy: []paging.Sort{},
 			}
 
 			mods := sqlboiler.OffsetToQueryMods(params)
@@ -124,7 +124,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 		It("should format single column DESC", func() {
 			params := paging.FetchParams{
 				Limit: 10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 				},
 			}
@@ -138,7 +138,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 		It("should format single column ASC (no DESC keyword)", func() {
 			params := paging.FetchParams{
 				Limit: 10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "name", Desc: false},
 				},
 			}
@@ -152,7 +152,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 		It("should format multiple columns with mixed directions", func() {
 			params := paging.FetchParams{
 				Limit: 10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "name", Desc: false},
 					{Column: "id", Desc: true},
@@ -168,7 +168,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 		It("should format three columns all DESC", func() {
 			params := paging.FetchParams{
 				Limit: 10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 					{Column: "updated_at", Desc: true},
 					{Column: "id", Desc: true},
@@ -187,7 +187,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 			params := paging.FetchParams{
 				Offset: 0,
 				Limit:  10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 				},
 			}
@@ -202,7 +202,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 			params := paging.FetchParams{
 				Offset: 10,
 				Limit:  10,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "created_at", Desc: true},
 				},
 			}
@@ -217,7 +217,7 @@ var _ = Describe("OffsetToQueryMods", func() {
 			params := paging.FetchParams{
 				Offset: 1000,
 				Limit:  50,
-				OrderBy: []paging.OrderBy{
+				OrderBy: []paging.Sort{
 					{Column: "id", Desc: false},
 				},
 			}

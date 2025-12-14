@@ -1,6 +1,6 @@
-# Migration Guide
+# Migration Guide: v0.3.0 to v1.0
 
-This guide helps you migrate from the old `go-paging` API to the new modular architecture.
+This guide helps you migrate from go-paging v0.3.0 to the new v1.0 modular architecture.
 
 ## Quick Summary
 
@@ -23,13 +23,16 @@ This guide helps you migrate from the old `go-paging` API to the new modular arc
 - ✨ **60-80% less boilerplate** with `offset.BuildConnection()`
 - ✨ Generic `Connection[T]` and `Edge[T]` types
 - ✨ Type-safe transformations with automatic error handling
-- ✨ Modular architecture ready for cursor and quota-fill pagination
+- ✨ Modular architecture with cursor and quota-fill pagination support
+- ✨ **Automatic N+1 pattern** - No more manual `limit + 1` with `cursor.BuildFetchParams()`
 
 ## Overview
 
 The library has been refactored to use a modular package structure:
 
 - **`offset/`** package: Offset-based pagination with cursor encoding
+- **`cursor/`** package: Cursor-based (keyset) pagination
+- **`quotafill/`** package: Filter-aware iterative fetching
 - **`sqlboiler/`** package: SQLBoiler ORM adapter (generic + strategy-specific)
 - **Root package**: Shared types (`PageArgs`, `PageInfo`, `Connection[T]`, `Edge[T]`)
 
@@ -98,7 +101,7 @@ var paginator offset.Paginator
 
 ### 4. Use BuildConnection (Recommended!)
 
-This is the **biggest improvement** in v2. Instead of manually building edges and nodes, use `offset.BuildConnection()`:
+This is the **biggest improvement** in v1.0. Instead of manually building edges and nodes, use `offset.BuildConnection()`:
 
 **Before (Manual Boilerplate - 15+ lines):**
 
@@ -129,7 +132,7 @@ func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*User
 **After (BuildConnection - 1 line!):**
 
 ```go
-func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[User], error) {
+func (r *queryResolver) Users(ctx context.Context, page *paging.PageArgs) (*paging.Connection[*User], error) {
     totalCount, _ := models.Users().Count(ctx, r.DB)
     paginator := offset.New(page, totalCount)
 
@@ -150,6 +153,7 @@ func toDomainUser(db *models.User) (*User, error) {
 ```
 
 **Benefits:**
+
 - ✅ 60-80% less code
 - ✅ No manual cursor encoding
 - ✅ Automatic error handling
@@ -238,7 +242,7 @@ import (
     "github.com/my-user/my-app/models"
 )
 
-func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[models.User], error) {
+func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[*models.User], error) {
     // Get total count
     totalCount, err := models.Users().Count(ctx, db)
     if err != nil {
@@ -269,7 +273,7 @@ type DomainUser struct {
     FullName string
 }
 
-func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[DomainUser], error) {
+func GetUsers(ctx context.Context, pageArgs *paging.PageArgs, db *sql.DB) (*paging.Connection[*DomainUser], error) {
     totalCount, _ := models.Users().Count(ctx, db)
     paginator := offset.New(pageArgs, totalCount)
     dbUsers, _ := models.Users(paginator.QueryMods()...).All(ctx, db)
@@ -297,8 +301,8 @@ These parts of the API remain unchanged:
 
 Cursor encoding/decoding functions have moved to the offset package and been renamed:
 
-| Old (v1) | New (v2) |
-|----------|----------|
+| Old (v0.3.0) | New (v1.0) |
+|--------------|------------|
 | `paging.EncodeOffsetCursor()` | `offset.EncodeCursor()` |
 | `paging.DecodeOffsetCursor()` | `offset.DecodeCursor()` |
 
@@ -318,21 +322,69 @@ offsetValue := offset.DecodeCursor(cursor)
 
 **Note:** Most users don't need to call these functions directly - the paginator and `BuildConnection()` handle cursor encoding/decoding automatically. You only need these if you're manually building cursors for testing or custom pagination logic.
 
+## New: Automatic N+1 Pattern for Cursor Pagination
+
+v1.0 introduces `cursor.BuildFetchParams()` which automatically handles the N+1 pattern, eliminating the need to manually add +1 to your limit.
+
+**Before (Manual N+1):**
+
+```go
+// ❌ Had to remember to add +1 manually
+limit := 10
+if page != nil && page.First != nil {
+    limit = *page.First
+}
+
+var cursorPos *paging.CursorPosition
+if page != nil && page.After != nil {
+    cursorPos, _ = encoder.Decode(*page.After)
+}
+
+fetchParams := paging.FetchParams{
+    Limit:   limit + 1,  // Manual N+1
+    Cursor:  cursorPos,
+    OrderBy: []paging.OrderBy{
+        {Column: "created_at", Desc: true},
+        {Column: "id", Desc: true},
+    },
+}
+users, _ := fetcher.Fetch(ctx, fetchParams)
+```
+
+**After (Automatic N+1):**
+
+```go
+// ✅ N+1 handled automatically!
+orderBy := []paging.OrderBy{
+    {Column: "created_at", Desc: true},
+    {Column: "id", Desc: true},
+}
+fetchParams := cursor.BuildFetchParams(page, encoder, orderBy)
+users, _ := fetcher.Fetch(ctx, fetchParams)
+```
+
+This makes cursor pagination consistent with offset and quota-fill pagination, where N+1 is handled internally. The function:
+
+- Extracts the requested limit from PageArgs (defaults to 50)
+- Automatically adds +1 for HasNextPage detection
+- Decodes the After cursor
+- Returns ready-to-use FetchParams
+
 ## Advanced: Generic Connection Types
 
-v2 introduces generic `Connection[T]` and `Edge[T]` types:
+v1.0 introduces generic `Connection[T]` and `Edge[T]` types:
 
 ```go
 // Built-in generic types
 type Connection[T any] struct {
     Edges    []Edge[T]
-    Nodes    []*T
+    Nodes    []T
     PageInfo PageInfo
 }
 
 type Edge[T any] struct {
     Cursor string
-    Node   *T
+    Node   T
 }
 ```
 
@@ -365,6 +417,7 @@ models:
 The SQLBoiler adapter has been refactored for extensibility. **Most users don't need to change anything** - this only affects advanced use cases.
 
 **What changed:**
+
 - Split into `fetcher.go` (generic ORM integration) + `offset.go` (strategy-specific queries)
 - Enables future support for cursor pagination and other ORMs (GORM, sqlc, etc.)
 
@@ -408,15 +461,3 @@ If you encounter issues during migration, please:
 2. Review the [README.md](./README.md) for examples
 3. Check the test files for usage patterns
 4. Open an issue on GitHub with your specific use case
-
-## Coming Soon
-
-**Phase 2: Cursor Pagination**
-- High-performance keyset pagination
-- O(1) complexity regardless of page depth
-- Same `BuildConnection()` pattern
-
-**Phase 3: Quota-Fill Pagination**
-- Authorization-aware filtering
-- Consistent page sizes with per-item filtering
-- Works with cursor or offset strategies

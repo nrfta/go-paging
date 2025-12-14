@@ -238,8 +238,8 @@ var _ = Describe("Connection and Edge", func() {
 			// This test demonstrates the before/after from the research document
 
 			// BEFORE: Manual boilerplate (what users had to write)
-			beforeConnection := func(dbUsers []DBUser, paginator offset.Paginator) (*paging.Connection[DomainUser], error) {
-				result := &paging.Connection[DomainUser]{
+			beforeConnection := func(dbUsers []DBUser, paginator offset.Paginator) (*paging.Connection[*DomainUser], error) {
+				result := &paging.Connection[*DomainUser]{
 					PageInfo: paginator.PageInfo,
 				}
 
@@ -255,7 +255,7 @@ var _ = Describe("Connection and Edge", func() {
 					cursor := *offset.EncodeCursor(paginator.Offset + i + 1)
 
 					// Manual edge building
-					result.Edges = append(result.Edges, paging.Edge[DomainUser]{
+					result.Edges = append(result.Edges, paging.Edge[*DomainUser]{
 						Cursor: cursor,
 						Node:   user,
 					})
@@ -268,7 +268,7 @@ var _ = Describe("Connection and Edge", func() {
 			}
 
 			// AFTER: Using BuildConnection (new API)
-			afterConnection := func(dbUsers []DBUser, paginator offset.Paginator) (*paging.Connection[DomainUser], error) {
+			afterConnection := func(dbUsers []DBUser, paginator offset.Paginator) (*paging.Connection[*DomainUser], error) {
 				return offset.BuildConnection(paginator, dbUsers, func(db DBUser) (*DomainUser, error) {
 					return &DomainUser{
 						ID:        fmt.Sprintf("user-%d", db.ID),

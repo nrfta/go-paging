@@ -60,17 +60,3 @@ func (pa *PageArgs) GetAfter() *string {
 func (pa *PageArgs) GetSortBy() []Sort {
 	return pa.SortBy
 }
-
-// PageInfo contains metadata about a paginated result set.
-// It uses function fields to enable lazy evaluation of pagination metadata,
-// which is useful when some information (like total count) may be expensive to compute.
-//
-// All functions return both a value and an error to support async computation
-// or database queries that may fail.
-type PageInfo struct {
-	TotalCount      func() (*int, error)
-	HasPreviousPage func() (bool, error)
-	HasNextPage     func() (bool, error)
-	StartCursor     func() (*string, error)
-	EndCursor       func() (*string, error)
-}

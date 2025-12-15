@@ -36,6 +36,51 @@ type Paginator struct {
 	encoder  interface{} // Stored as interface{} to avoid making Paginator generic
 }
 
+// parsedParams holds the common parsed state from PageArgs and Schema.
+type parsedParams[T any] struct {
+	encoder paging.CursorEncoder[T]
+	orderBy []paging.Sort
+	limit   int
+	cursor  *paging.CursorPosition
+}
+
+// parsePageArgs extracts and validates common parameters from PageArgs and Schema.
+func parsePageArgs[T any](page PageArgs, schema *Schema[T], defaultLimit *int) (parsedParams[T], error) {
+	encoder, err := schema.EncoderFor(page)
+	if err != nil {
+		return parsedParams[T]{}, err
+	}
+
+	var sortBy []paging.Sort
+	if page != nil && page.GetSortBy() != nil {
+		sortBy = page.GetSortBy()
+	}
+	orderBy := schema.BuildOrderBy(sortBy)
+
+	limit := defaultLimitVal
+	if defaultLimit != nil {
+		limit = *defaultLimit
+	}
+	if page != nil && page.GetFirst() != nil && *page.GetFirst() > 0 {
+		limit = *page.GetFirst()
+	}
+	if limit == 0 {
+		limit = defaultLimitVal
+	}
+
+	var cursor *paging.CursorPosition
+	if page != nil && page.GetAfter() != nil {
+		cursor, _ = encoder.Decode(*page.GetAfter())
+	}
+
+	return parsedParams[T]{
+		encoder: encoder,
+		orderBy: orderBy,
+		limit:   limit,
+		cursor:  cursor,
+	}, nil
+}
+
 // New creates a new cursor paginator using a Schema.
 //
 // Parameters:
@@ -82,59 +127,33 @@ func New[T any](
 	items []T,
 	defaultLimit ...*int,
 ) (Paginator, error) {
-	// Validate PageArgs and get encoder from schema
-	encoder, err := schema.EncoderFor(page)
+	var defLimit *int
+	if len(defaultLimit) > 0 {
+		defLimit = defaultLimit[0]
+	}
+
+	params, err := parsePageArgs(page, schema, defLimit)
 	if err != nil {
 		return Paginator{}, err
 	}
 
-	// Build orderBy from schema (includes fixed fields)
-	var sortBy []paging.Sort
-	if page != nil && page.GetSortBy() != nil {
-		sortBy = page.GetSortBy()
-	}
-	orderBy := schema.BuildOrderBy(sortBy)
-
-	// Determine limit (same as offset pagination)
-	limit := defaultLimitVal
-	if len(defaultLimit) > 0 && defaultLimit[0] != nil {
-		limit = *defaultLimit[0]
-	}
-
-	if page != nil && page.GetFirst() != nil && *page.GetFirst() > 0 {
-		limit = *page.GetFirst()
-	}
-
-	// Ensure limit is never 0 to avoid divide by zero
-	if limit == 0 {
-		limit = defaultLimitVal
-	}
-
-	// Decode cursor from After field
-	var cursor *paging.CursorPosition
-	if page != nil && page.GetAfter() != nil {
-		cursor, _ = encoder.Decode(*page.GetAfter())
-	}
-
 	// N+1 pattern: Check if we got more items than requested
-	// If caller fetched LIMIT+1 and we got LIMIT+1, there's a next page
-	hasNextPage := len(items) > limit
+	hasNextPage := len(items) > params.limit
 
 	// Trim items to the requested limit
 	trimmedItems := items
 	if hasNextPage {
-		trimmedItems = items[:limit]
+		trimmedItems = items[:params.limit]
 	}
 
-	// Build PageInfo with trimmed items and accurate hasNextPage
-	pageInfo := newCursorBasedPageInfo(encoder, trimmedItems, limit, cursor, hasNextPage)
+	pageInfo := newCursorBasedPageInfo(params.encoder, trimmedItems, params.limit, params.cursor, hasNextPage)
 
 	return Paginator{
-		limit:    limit,
-		cursor:   cursor,
+		limit:    params.limit,
+		cursor:   params.cursor,
 		PageInfo: pageInfo,
-		orderBy:  orderBy,
-		encoder:  encoder, // Store encoder for BuildConnection
+		orderBy:  params.orderBy,
+		encoder:  params.encoder,
 	}, nil
 }
 
@@ -144,37 +163,15 @@ func BuildFetchParams[T any](
 	page PageArgs,
 	schema *Schema[T],
 ) (paging.FetchParams, error) {
-	// Validate PageArgs and get encoder from schema
-	encoder, err := schema.EncoderFor(page)
+	params, err := parsePageArgs(page, schema, nil)
 	if err != nil {
 		return paging.FetchParams{}, err
 	}
 
-	// Build orderBy from schema (includes fixed fields)
-	var sortBy []paging.Sort
-	if page != nil && page.GetSortBy() != nil {
-		sortBy = page.GetSortBy()
-	}
-	orderBy := schema.BuildOrderBy(sortBy)
-
-	limit := defaultLimitVal
-	if page != nil && page.GetFirst() != nil && *page.GetFirst() > 0 {
-		limit = *page.GetFirst()
-	}
-
-	if limit == 0 {
-		limit = defaultLimitVal
-	}
-
-	var cursor *paging.CursorPosition
-	if page != nil && page.GetAfter() != nil {
-		cursor, _ = encoder.Decode(*page.GetAfter())
-	}
-
 	return paging.FetchParams{
-		Limit:   limit + 1,
-		Cursor:  cursor,
-		OrderBy: orderBy,
+		Limit:   params.limit + 1, // N+1 for HasNextPage detection
+		Cursor:  params.cursor,
+		OrderBy: params.orderBy,
 	}, nil
 }
 
@@ -271,24 +268,6 @@ func BuildConnection[From any, To any](
 		},
 		transform,
 	)
-}
-
-// defaultOrderBy is the fallback when no sort columns are specified.
-var defaultOrderBy = []paging.Sort{{Column: "created_at", Desc: true}}
-
-// buildOrderBy constructs OrderBy directives from PageArgs.
-// Defaults to created_at DESC if no sort columns are specified.
-func buildOrderBy(page PageArgs) []paging.Sort {
-	if page == nil {
-		return defaultOrderBy
-	}
-
-	sortBy := page.GetSortBy()
-	if len(sortBy) == 0 {
-		return defaultOrderBy
-	}
-
-	return sortBy
 }
 
 // newCursorBasedPageInfo creates PageInfo for cursor-based pagination.

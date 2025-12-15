@@ -166,17 +166,8 @@ func (s *Schema[T]) EncoderFor(pageArgs PageArgs) (paging.CursorEncoder[T], erro
 //	BuildOrderBy([{Column: "name", Desc: true}])
 //	// Returns: [tenant_id ASC, name DESC, id DESC]
 func (s *Schema[T]) BuildOrderBy(userSorts []paging.Sort) []paging.Sort {
-	result := make([]paging.Sort, 0)
-
-	// Add fixed fields in declaration order, respecting their position relative to user-sortable fields
-	// We need to:
-	// 1. Add fixed fields that come before the first user-sortable field
-	// 2. Add user sorts
-	// 3. Add fixed fields that come after the last user-sortable field
-
-	// Find position of first and last user-sortable field
-	firstSortablePos := -1
-	lastSortablePos := -1
+	// Find position bounds of user-sortable fields
+	firstSortablePos, lastSortablePos := -1, -1
 	for _, spec := range s.allFields {
 		if !spec.isFixed {
 			if firstSortablePos == -1 {
@@ -188,38 +179,27 @@ func (s *Schema[T]) BuildOrderBy(userSorts []paging.Sort) []paging.Sort {
 
 	// Special case: No user-sortable fields registered (only fixed fields)
 	if firstSortablePos == -1 {
-		for _, spec := range s.fixedFields {
-			result = append(result, paging.Sort{
-				Column: spec.name,
-				Desc:   bool(*spec.direction),
-			})
-		}
-		return result
+		return s.fixedFieldsToSorts(func(*fieldSpec[T]) bool { return true })
 	}
 
-	// Add fixed fields that come before first sortable field (prepended)
-	for _, spec := range s.fixedFields {
-		if spec.position < firstSortablePos {
-			result = append(result, paging.Sort{
-				Column: spec.name,
-				Desc:   bool(*spec.direction),
-			})
-		}
-	}
-
-	// Add user sorts
+	// Build result: prepend fixed fields before first sortable, then user sorts, then append fixed fields after last sortable
+	result := s.fixedFieldsToSorts(func(spec *fieldSpec[T]) bool { return spec.position < firstSortablePos })
 	result = append(result, userSorts...)
+	result = append(result, s.fixedFieldsToSorts(func(spec *fieldSpec[T]) bool { return spec.position > lastSortablePos })...)
+	return result
+}
 
-	// Add fixed fields that come after last sortable field (appended)
+// fixedFieldsToSorts converts fixed fields matching the predicate to Sort directives.
+func (s *Schema[T]) fixedFieldsToSorts(predicate func(*fieldSpec[T]) bool) []paging.Sort {
+	var result []paging.Sort
 	for _, spec := range s.fixedFields {
-		if spec.position > lastSortablePos {
+		if predicate(spec) {
 			result = append(result, paging.Sort{
 				Column: spec.name,
 				Desc:   bool(*spec.direction),
 			})
 		}
 	}
-
 	return result
 }
 

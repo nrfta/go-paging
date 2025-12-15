@@ -139,7 +139,7 @@ func rawWhereClause(clause string, args []interface{}) qm.QueryMod {
 }
 
 // convertValueForSQL converts JSON-decoded values to proper SQL types.
-// JSON unmarshaling can change types (e.g., int → float64), so we normalize them here.
+// JSON unmarshaling can change types (e.g., int to float64), so we normalize them here.
 func convertValueForSQL(val any) interface{} {
 	switch v := val.(type) {
 	case string:
@@ -149,25 +149,9 @@ func convertValueForSQL(val any) interface{} {
 		}
 		return v
 
-	case float64:
-		// JSON numbers are always float64, but we might want int for integer columns
-		// For now, pass as-is and let PostgreSQL handle the conversion
+	case float64, int, int64, bool, time.Time, nil:
+		// Pass through types that PostgreSQL handles natively
 		return v
-
-	case int:
-		return v
-
-	case int64:
-		return v
-
-	case bool:
-		return v
-
-	case time.Time:
-		return v
-
-	case nil:
-		return nil
 
 	default:
 		// For unknown types, convert to string

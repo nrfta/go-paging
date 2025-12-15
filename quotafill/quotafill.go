@@ -186,15 +186,7 @@ func (w *Wrapper[T]) fetchIteration(
 	// Get encoder from schema for the current args
 	var cursorPos *paging.CursorPosition
 	if state.currentCursor != nil && w.schema != nil {
-		// Build temporary args with current cursor for encoder
-		cursorArgs := &paging.PageArgs{}
-		if args != nil && args.GetSortBy() != nil {
-			cursorArgs = &paging.PageArgs{
-				SortBy: args.GetSortBy(),
-			}
-		}
-
-		encoder, err := w.schema.EncoderFor(cursorArgs)
+		encoder, err := w.schema.EncoderFor(argsForEncoder(args))
 		if err != nil {
 			state.lastError = fmt.Errorf("get encoder (iteration %d): %w", state.iteration+1, err)
 			return ""
@@ -210,11 +202,7 @@ func (w *Wrapper[T]) fetchIteration(
 	// Get orderBy from schema
 	var orderBy []paging.Sort
 	if w.schema != nil {
-		var sortBy []paging.Sort
-		if args != nil && args.GetSortBy() != nil {
-			sortBy = args.GetSortBy()
-		}
-		orderBy = w.schema.BuildOrderBy(sortBy)
+		orderBy = w.schema.BuildOrderBy(getSortBy(args))
 	}
 
 	fetchParams := paging.FetchParams{
@@ -257,15 +245,7 @@ func (w *Wrapper[T]) fetchIteration(
 	// Encode cursor from last EXAMINED item (not last filtered item)
 	// This ensures we continue from where we left off in the database scan
 	if w.schema != nil && len(trimmedItems) > 0 {
-		// Build temporary args for encoder
-		cursorArgs := &paging.PageArgs{}
-		if args != nil && args.GetSortBy() != nil {
-			cursorArgs = &paging.PageArgs{
-				SortBy: args.GetSortBy(),
-			}
-		}
-
-		encoder, err := w.schema.EncoderFor(cursorArgs)
+		encoder, err := w.schema.EncoderFor(argsForEncoder(args))
 		if err != nil {
 			state.lastError = fmt.Errorf("get encoder for cursor (iteration %d): %w", state.iteration, err)
 			return ""
@@ -315,6 +295,22 @@ func stringPtr(s string) *string {
 	return &s
 }
 
+// argsForEncoder extracts just the SortBy from args for encoder creation.
+func argsForEncoder(args *paging.PageArgs) *paging.PageArgs {
+	if args == nil || args.GetSortBy() == nil {
+		return &paging.PageArgs{}
+	}
+	return &paging.PageArgs{SortBy: args.GetSortBy()}
+}
+
+// getSortBy safely extracts SortBy from args.
+func getSortBy(args *paging.PageArgs) []paging.Sort {
+	if args == nil || args.GetSortBy() == nil {
+		return nil
+	}
+	return args.GetSortBy()
+}
+
 func buildPageInfo[T any](
 	args *paging.PageArgs,
 	hasNextPage bool,
@@ -327,14 +323,7 @@ func buildPageInfo[T any](
 			if schema == nil || len(items) == 0 {
 				return nil, nil
 			}
-			// Build temporary args for encoder
-			cursorArgs := &paging.PageArgs{}
-			if args != nil && args.GetSortBy() != nil {
-				cursorArgs = &paging.PageArgs{
-					SortBy: args.GetSortBy(),
-				}
-			}
-			encoder, err := schema.EncoderFor(cursorArgs)
+			encoder, err := schema.EncoderFor(argsForEncoder(args))
 			if err != nil {
 				return nil, err
 			}
@@ -344,14 +333,7 @@ func buildPageInfo[T any](
 			if schema == nil || len(items) == 0 {
 				return nil, nil
 			}
-			// Build temporary args for encoder
-			cursorArgs := &paging.PageArgs{}
-			if args != nil && args.GetSortBy() != nil {
-				cursorArgs = &paging.PageArgs{
-					SortBy: args.GetSortBy(),
-				}
-			}
-			encoder, err := schema.EncoderFor(cursorArgs)
+			encoder, err := schema.EncoderFor(argsForEncoder(args))
 			if err != nil {
 				return nil, err
 			}

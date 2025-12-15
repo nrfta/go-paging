@@ -20,22 +20,19 @@ func DecodeCursor(input *string) int {
 		return 0
 	}
 
-	var decoded []byte
-	var data []string
-	var err error
-
-	if decoded, err = base64.URLEncoding.DecodeString(*input); err != nil {
+	decoded, err := base64.URLEncoding.DecodeString(*input)
+	if err != nil {
 		return 0
 	}
 
-	if data = strings.Split(string(decoded), ":"); len(data) == 3 {
-		offset, err := strconv.ParseInt(data[2], 10, 32)
-
-		if err != nil {
-			return 0
-		}
-		return int(offset)
+	parts := strings.Split(string(decoded), ":")
+	if len(parts) != 3 {
+		return 0
 	}
 
-	return 0
+	offset, err := strconv.ParseInt(parts[2], 10, 32)
+	if err != nil {
+		return 0
+	}
+	return int(offset)
 }

@@ -73,3 +73,29 @@ var _ = Describe("PageArgs", func() {
 		})
 	})
 })
+
+var _ = Describe("NewEmptyPageInfo", func() {
+	It("should return empty PageInfo with nil/false values", func() {
+		pageInfo := paging.NewEmptyPageInfo()
+
+		totalCount, err := pageInfo.TotalCount()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(totalCount).To(BeNil())
+
+		startCursor, err := pageInfo.StartCursor()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(startCursor).To(BeNil())
+
+		endCursor, err := pageInfo.EndCursor()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(endCursor).To(BeNil())
+
+		hasNext, err := pageInfo.HasNextPage()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hasNext).To(BeFalse())
+
+		hasPrev, err := pageInfo.HasPreviousPage()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hasPrev).To(BeFalse())
+	})
+})

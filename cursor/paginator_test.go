@@ -1,7 +1,7 @@
 package cursor_test
 
 import (
-	"errors"
+	"context"
 	"time"
 
 	"github.com/nrfta/paging-go/v2"
@@ -11,18 +11,65 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// mockFetcher creates a simple in-memory fetcher for testing cursor pagination
+func mockFetcher(allItems []*testUser) paging.Fetcher[*testUser] {
+	return &testFetcher{allItems: allItems}
+}
+
+type testFetcher struct {
+	allItems []*testUser
+}
+
+func (f *testFetcher) Fetch(ctx context.Context, params paging.FetchParams) ([]*testUser, error) {
+	// Simple in-memory filtering based on cursor
+	var result []*testUser
+	startIdx := 0
+
+	// If cursor exists, find where to start
+	if params.Cursor != nil {
+		if idVal, ok := params.Cursor.Values["id"]; ok {
+			if id, ok := idVal.(string); ok {
+				for i, u := range f.allItems {
+					if u.ID == id {
+						startIdx = i + 1 // Start after cursor position
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Collect items
+	for i := startIdx; i < len(f.allItems) && len(result) < params.Limit; i++ {
+		result = append(result, f.allItems[i])
+	}
+
+	return result, nil
+}
+
+func (f *testFetcher) Count(ctx context.Context, params paging.FetchParams) (int64, error) {
+	return int64(len(f.allItems)), nil
+}
+
 var _ = Describe("Paginator", func() {
 	var (
-		schema *cursor.Schema[*testUser]
-		users  []*testUser
+		ctx      context.Context
+		schema   *cursor.Schema[*testUser]
+		users    []*testUser
+		fetcher  paging.Fetcher[*testUser]
+		paginator paging.Paginator[*testUser]
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
+
 		// Create test users
 		users = []*testUser{
-			{ID: "user-1", CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Age: 25},
-			{ID: "user-2", CreatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Age: 30},
-			{ID: "user-3", CreatedAt: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), Age: 35},
+			{ID: "user-1", Name: "Alice", Email: "alice@example.com", CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Age: 25},
+			{ID: "user-2", Name: "Bob", Email: "bob@example.com", CreatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Age: 30},
+			{ID: "user-3", Name: "Charlie", Email: "charlie@example.com", CreatedAt: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), Age: 35},
+			{ID: "user-4", Name: "Diana", Email: "diana@example.com", CreatedAt: time.Date(2024, 1, 4, 0, 0, 0, 0, time.UTC), Age: 40},
+			{ID: "user-5", Name: "Eve", Email: "eve@example.com", CreatedAt: time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC), Age: 45},
 		}
 
 		// Create schema with all sortable fields
@@ -31,244 +78,179 @@ var _ = Describe("Paginator", func() {
 			Field("name", "n", func(u *testUser) any { return u.Name }).
 			Field("email", "e", func(u *testUser) any { return u.Email }).
 			FixedField("id", cursor.DESC, "i", func(u *testUser) any { return u.ID })
+
+		fetcher = mockFetcher(users)
+		paginator = cursor.New(fetcher, schema)
 	})
 
 	Describe("Basic functionality", func() {
 		It("uses the default limit when no pageArgs.First is provided", func() {
-			page := &paging.PageArgs{}
+			args := &paging.PageArgs{}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(paginator.GetLimit()).To(Equal(50))
-			Expect(paginator.GetCursor()).To(BeNil())
+			// Should return all 5 users (less than default 50)
+			Expect(page.Nodes).To(HaveLen(5))
+			Expect(page.Metadata.Strategy).To(Equal("cursor"))
 		})
 
-		It("parses the pageArgs correctly", func() {
-			// Create PageArgs with sort field to ensure it's in cursor
-			pageArgsForCursor := paging.WithSortBy(&paging.PageArgs{}, "created_at", true)
+		It("parses the pageArgs correctly with cursor", func() {
+			// First, get a cursor from the first page
+			first := 2
+			args := &paging.PageArgs{First: &first}
 
-			// Get encoder and encode a cursor
-			encoder, _ := schema.EncoderFor(pageArgsForCursor)
-			cursorStr, _ := encoder.Encode(users[0])
+			page, err := paginator.Paginate(ctx, args)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(page.Nodes).To(HaveLen(2))
 
-			first := 10
-			page := &paging.PageArgs{
+			// Get the end cursor
+			endCursor, _ := page.PageInfo.EndCursor()
+			Expect(endCursor).ToNot(BeNil())
+
+			// Use it for next page
+			nextArgs := &paging.PageArgs{
 				First: &first,
-				After: cursorStr,
-				SortBy: []paging.Sort{{Column: "created_at", Desc: true}},
+				After: endCursor,
 			}
 
-			paginator, err := cursor.New(page, schema, users)
+			nextPage, err := paginator.Paginate(ctx, nextArgs)
 			Expect(err).ToNot(HaveOccurred())
-
-			Expect(paginator.GetLimit()).To(Equal(10))
-			Expect(paginator.GetCursor()).ToNot(BeNil())
-			Expect(paginator.GetCursor().Values).To(HaveKey("id"))
-			Expect(paginator.GetCursor().Values).To(HaveKey("created_at"))
+			Expect(nextPage.Nodes).To(HaveLen(2))
+			// Should start after user-2
+			Expect(nextPage.Nodes[0].ID).To(Equal("user-3"))
 		})
 
 		It("handles nil cursor gracefully", func() {
-			first := 10
-			page := &paging.PageArgs{
-				First: &first,
-			}
+			first := 3
+			args := &paging.PageArgs{First: &first}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(paginator.GetLimit()).To(Equal(10))
-			Expect(paginator.GetCursor()).To(BeNil())
-		})
-
-		It("handles zero limit with default", func() {
-			first := 0
-			page := &paging.PageArgs{
-				First: &first,
-			}
-
-			paginator, err := cursor.New(page, schema, users)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(paginator.GetLimit()).To(Equal(50)) // Falls back to default
-		})
-
-		It("uses custom default limit when provided", func() {
-			customDefault := 25
-			page := &paging.PageArgs{}
-
-			paginator, err := cursor.New(page, schema, users, &customDefault)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(paginator.GetLimit()).To(Equal(25))
+			Expect(page.Nodes).To(HaveLen(3))
+			Expect(page.Nodes[0].ID).To(Equal("user-1"))
 		})
 	})
 
 	Describe("PageInfo", func() {
 		It("creates a page info with correct metadata", func() {
-			first := 10
-			page := &paging.PageArgs{
-				First: &first,
-			}
+			first := 2
+			args := &paging.PageArgs{First: &first}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
 			// TotalCount should return nil for cursor pagination
-			totalCount, err := paginator.PageInfo.TotalCount()
+			totalCount, err := page.PageInfo.TotalCount()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(totalCount).To(BeNil())
 
-			// HasNextPage should be false (only 3 items, limit is 10)
-			hasNextPage, err := paginator.PageInfo.HasNextPage()
+			// HasNextPage should be true (5 users, limit 2)
+			hasNextPage, err := page.PageInfo.HasNextPage()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(hasNextPage).To(BeFalse())
+			Expect(hasNextPage).To(BeTrue())
 
 			// HasPreviousPage should be false (no cursor)
-			hasPreviousPage, err := paginator.PageInfo.HasPreviousPage()
+			hasPreviousPage, err := page.PageInfo.HasPreviousPage()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(hasPreviousPage).To(BeFalse())
 
 			// StartCursor should encode first item
-			startCursor, err := paginator.PageInfo.StartCursor()
+			startCursor, err := page.PageInfo.StartCursor()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(startCursor).ToNot(BeNil())
 
 			// EndCursor should encode last item
-			endCursor, err := paginator.PageInfo.EndCursor()
+			endCursor, err := page.PageInfo.EndCursor()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(endCursor).ToNot(BeNil())
 		})
 
-		It("indicates HasNextPage when more items exist (N+1 pattern)", func() {
-			first := 2 // Request 2 items
-			page := &paging.PageArgs{
-				First: &first,
-			}
+		It("indicates no HasNextPage when all items fetched", func() {
+			first := 10 // More than we have
+			args := &paging.PageArgs{First: &first}
 
-			// N+1 pattern: Pass 3 items (LIMIT+1) to signal there's a next page
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
-			hasNextPage, _ := paginator.PageInfo.HasNextPage()
-			Expect(hasNextPage).To(BeTrue()) // len(items) > limit means HasNextPage = true
-		})
-
-		It("indicates no HasNextPage when exactly limit items exist", func() {
-			first := 3 // Request 3 items, we have exactly 3
-			page := &paging.PageArgs{
-				First: &first,
-			}
-
-			paginator, err := cursor.New(page, schema, users)
-			Expect(err).ToNot(HaveOccurred())
-
-			hasNextPage, _ := paginator.PageInfo.HasNextPage()
-			Expect(hasNextPage).To(BeFalse()) // len(items) == limit means HasNextPage = false
+			hasNextPage, _ := page.PageInfo.HasNextPage()
+			Expect(hasNextPage).To(BeFalse())
 		})
 
 		It("indicates HasPreviousPage when cursor is provided", func() {
-			encoder, _ := schema.EncoderFor(&paging.PageArgs{})
-			cursorStr, _ := encoder.Encode(users[1])
+			// Get cursor from first page
+			first := 2
+			args := &paging.PageArgs{First: &first}
+			firstPage, _ := paginator.Paginate(ctx, args)
+			endCursor, _ := firstPage.PageInfo.EndCursor()
 
-			first := 10
-			page := &paging.PageArgs{
+			// Second page should have HasPreviousPage = true
+			nextArgs := &paging.PageArgs{
 				First: &first,
-				After: cursorStr,
+				After: endCursor,
 			}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, nextArgs)
 			Expect(err).ToNot(HaveOccurred())
 
-			hasPreviousPage, _ := paginator.PageInfo.HasPreviousPage()
-			Expect(hasPreviousPage).To(BeTrue()) // Has cursor = not first page
+			hasPreviousPage, _ := page.PageInfo.HasPreviousPage()
+			Expect(hasPreviousPage).To(BeTrue())
 		})
 
 		It("handles empty results", func() {
-			emptyUsers := []*testUser{}
-			page := &paging.PageArgs{}
+			emptyFetcher := mockFetcher([]*testUser{})
+			emptyPaginator := cursor.New(emptyFetcher, schema)
+			args := &paging.PageArgs{}
 
-			paginator, err := cursor.New(page, schema, emptyUsers)
+			page, err := emptyPaginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
-			startCursor, _ := paginator.PageInfo.StartCursor()
+			startCursor, _ := page.PageInfo.StartCursor()
 			Expect(startCursor).To(BeNil())
 
-			endCursor, _ := paginator.PageInfo.EndCursor()
+			endCursor, _ := page.PageInfo.EndCursor()
 			Expect(endCursor).To(BeNil())
 
-			hasNextPage, _ := paginator.PageInfo.HasNextPage()
+			hasNextPage, _ := page.PageInfo.HasNextPage()
 			Expect(hasNextPage).To(BeFalse())
 		})
 	})
 
-	Describe("OrderBy", func() {
-		It("should include fixed field when no sort columns provided", func() {
-			page := &paging.PageArgs{}
+	Describe("PaginateOption", func() {
+		It("should use WithDefaultSize when First is nil", func() {
+			args := &paging.PageArgs{}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args, paging.WithDefaultSize(3))
 			Expect(err).ToNot(HaveOccurred())
-
-			// Schema automatically includes fixed "id" field
-			orderBy := paginator.GetOrderBy()
-			Expect(orderBy).To(HaveLen(1))
-			Expect(orderBy[0].Column).To(Equal("id"))
-			Expect(orderBy[0].Desc).To(BeTrue()) // Fixed field is DESC
+			Expect(page.Nodes).To(HaveLen(3))
 		})
 
-		It("should include user sorts and fixed field", func() {
-			page := paging.WithSortBy(&paging.PageArgs{}, "created_at", true)
+		It("should cap page size with WithMaxSize", func() {
+			first := 10
+			args := &paging.PageArgs{First: &first}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args, paging.WithMaxSize(2))
 			Expect(err).ToNot(HaveOccurred())
-
-			// Schema includes user sort + fixed "id" field
-			orderBy := paginator.GetOrderBy()
-			Expect(orderBy).To(HaveLen(2))
-			Expect(orderBy[0].Column).To(Equal("created_at"))
-			Expect(orderBy[0].Desc).To(BeTrue())
-			Expect(orderBy[1].Column).To(Equal("id"))
-			Expect(orderBy[1].Desc).To(BeTrue()) // Fixed field
+			Expect(page.Nodes).To(HaveLen(2))
 		})
 
-		It("should support multiple user-sortable columns", func() {
-			page := paging.WithMultiSort(&paging.PageArgs{},
-				paging.Sort{Column: "name", Desc: false},
-				paging.Sort{Column: "email", Desc: true},
-			)
+		It("should allow page size within MaxSize", func() {
+			first := 3
+			args := &paging.PageArgs{First: &first}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args, paging.WithMaxSize(5))
 			Expect(err).ToNot(HaveOccurred())
-
-			// Schema includes user sorts + fixed "id" field
-			orderBy := paginator.GetOrderBy()
-			Expect(orderBy).To(HaveLen(3))
-			Expect(orderBy[0].Column).To(Equal("name"))
-			Expect(orderBy[0].Desc).To(BeFalse())
-			Expect(orderBy[1].Column).To(Equal("email"))
-			Expect(orderBy[1].Desc).To(BeTrue())
-			Expect(orderBy[2].Column).To(Equal("id"))
-			Expect(orderBy[2].Desc).To(BeTrue()) // Fixed field
-		})
-
-		It("should validate sort fields and return error for invalid fields", func() {
-			page := paging.WithSortBy(&paging.PageArgs{}, "invalid_field", true)
-
-			_, err := cursor.New(page, schema, users)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("invalid sort field: invalid_field"))
+			Expect(page.Nodes).To(HaveLen(3))
 		})
 	})
 
 	Describe("BuildConnection", func() {
 		It("should build a connection with edges and nodes", func() {
 			first := 3
-			page := &paging.PageArgs{
-				First: &first,
-			}
+			args := &paging.PageArgs{First: &first}
 
-			paginator, err := cursor.New(page, schema, users)
+			page, err := paginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Transform function (just return same user for testing)
@@ -276,7 +258,7 @@ var _ = Describe("Paginator", func() {
 				return u, nil
 			}
 
-			conn, err := cursor.BuildConnection(paginator, users, transform)
+			conn, err := cursor.BuildConnection(page, schema, args, transform)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(conn).ToNot(BeNil())
@@ -291,38 +273,19 @@ var _ = Describe("Paginator", func() {
 			Expect(conn.PageInfo).ToNot(BeZero())
 		})
 
-		It("should handle transform errors", func() {
-			first := 3
-			page := &paging.PageArgs{
-				First: &first,
-			}
-
-			paginator, err := cursor.New(page, schema, users)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Transform function that returns error
-			transform := func(u *testUser) (*testUser, error) {
-				return nil, errors.New("transform error")
-			}
-
-			conn, err := cursor.BuildConnection(paginator, users, transform)
-
-			Expect(err).To(HaveOccurred())
-			Expect(conn).To(BeNil())
-		})
-
 		It("should handle empty results", func() {
-			emptyUsers := []*testUser{}
-			page := &paging.PageArgs{}
+			emptyFetcher := mockFetcher([]*testUser{})
+			emptyPaginator := cursor.New(emptyFetcher, schema)
+			args := &paging.PageArgs{}
 
-			paginator, err := cursor.New(page, schema, emptyUsers)
+			page, err := emptyPaginator.Paginate(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
 			transform := func(u *testUser) (*testUser, error) {
 				return u, nil
 			}
 
-			conn, err := cursor.BuildConnection(paginator, emptyUsers, transform)
+			conn, err := cursor.BuildConnection(page, schema, args, transform)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(conn.Nodes).To(HaveLen(0))

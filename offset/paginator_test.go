@@ -1,6 +1,8 @@
 package offset_test
 
 import (
+	"context"
+
 	"github.com/nrfta/paging-go/v2"
 	"github.com/nrfta/paging-go/v2/offset"
 
@@ -8,136 +10,156 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+type testUser struct {
+	ID   int
+	Name string
+}
+
+// mockFetcher creates a simple in-memory fetcher for testing
+func mockFetcher(totalCount int64, allItems []*testUser) paging.Fetcher[*testUser] {
+	return &testFetcher{
+		totalCount: totalCount,
+		allItems:   allItems,
+	}
+}
+
+type testFetcher struct {
+	totalCount int64
+	allItems   []*testUser
+}
+
+func (f *testFetcher) Fetch(ctx context.Context, params paging.FetchParams) ([]*testUser, error) {
+	start := params.Offset
+	end := start + params.Limit
+	if start >= len(f.allItems) {
+		return []*testUser{}, nil
+	}
+	if end > len(f.allItems) {
+		end = len(f.allItems)
+	}
+	return f.allItems[start:end], nil
+}
+
+func (f *testFetcher) Count(ctx context.Context, params paging.FetchParams) (int64, error) {
+	return f.totalCount, nil
+}
+
+// generateTestUsers creates a slice of test users
+func generateTestUsers(count int) []*testUser {
+	users := make([]*testUser, count)
+	for i := 0; i < count; i++ {
+		users[i] = &testUser{ID: i + 1, Name: "User"}
+	}
+	return users
+}
+
 var _ = Describe("Paginator", func() {
+	var (
+		ctx    context.Context
+		fetcher paging.Fetcher[*testUser]
+		paginator paging.Paginator[*testUser]
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		// Create 100 test users
+		allUsers := generateTestUsers(100)
+		fetcher = mockFetcher(100, allUsers)
+		paginator = offset.New(fetcher)
+	})
+
 	Describe("Basic functionality", func() {
 		It("uses the default limit when no pageArgs.First is provided", func() {
-			page := &paging.PageArgs{}
+			args := &paging.PageArgs{}
 
-			paginator := offset.New(page, 100)
+			page, err := paginator.Paginate(ctx, args)
+			Expect(err).ToNot(HaveOccurred())
 
-			Expect(paginator.Limit).To(Equal(50))
-			Expect(paginator.Offset).To(Equal(0))
+			// Should return 50 items (default page size)
+			Expect(page.Nodes).To(HaveLen(50))
+
+			totalCount, _ := page.PageInfo.TotalCount()
+			Expect(*totalCount).To(Equal(100))
 		})
 
 		It("parses the pageArgs correctly", func() {
 			first := 10
-			page := &paging.PageArgs{
+			args := &paging.PageArgs{
 				First: &first,
 				After: offset.EncodeCursor(20),
 			}
 
-			paginator := offset.New(page, 100)
+			page, err := paginator.Paginate(ctx, args)
+			Expect(err).ToNot(HaveOccurred())
 
-			Expect(paginator.Limit).To(Equal(10))
-			Expect(paginator.Offset).To(Equal(20))
+			// Should return 10 items starting at offset 20
+			Expect(page.Nodes).To(HaveLen(10))
+			Expect(page.Nodes[0].ID).To(Equal(21)) // offset 20 = ID 21 (1-indexed)
 		})
 
-		It("creates a page info with provided info", func() {
+		It("creates a page info with correct pagination metadata", func() {
 			first := 10
-			page := &paging.PageArgs{
+			args := &paging.PageArgs{
 				First: &first,
 				After: offset.EncodeCursor(20),
 			}
 
-			paginator := offset.New(page, 100)
+			page, err := paginator.Paginate(ctx, args)
+			Expect(err).ToNot(HaveOccurred())
 
-			totalCount, _ := paginator.PageInfo.TotalCount()
+			totalCount, _ := page.PageInfo.TotalCount()
 			Expect(*totalCount).To(Equal(100))
 
-			hasNextPage, _ := paginator.PageInfo.HasNextPage()
+			hasNextPage, _ := page.PageInfo.HasNextPage()
 			Expect(hasNextPage).To(Equal(true))
 
-			hasPreviousPage, _ := paginator.PageInfo.HasPreviousPage()
+			hasPreviousPage, _ := page.PageInfo.HasPreviousPage()
 			Expect(hasPreviousPage).To(Equal(true))
 
-			startCursor, _ := paginator.PageInfo.StartCursor()
+			startCursor, _ := page.PageInfo.StartCursor()
 			Expect(startCursor).To(Equal(offset.EncodeCursor(0)))
 
-			endCursor, _ := paginator.PageInfo.EndCursor()
+			endCursor, _ := page.PageInfo.EndCursor()
 			Expect(endCursor).To(Equal(offset.EncodeCursor(90)))
-		})
-
-		It("returns the sqlboiler query mods", func() {
-			first := 10
-			page := &paging.PageArgs{
-				First: &first,
-				After: offset.EncodeCursor(20),
-			}
-
-			paginator := offset.New(page, 100)
-
-			mods := paginator.QueryMods()
-
-			Expect(modTypeName(mods[0])).To(Equal("qm.offsetQueryMod"))
-			Expect(modTypeName(mods[1])).To(Equal("qm.limitQueryMod"))
-			Expect(modTypeName(mods[2])).To(Equal("qm.orderByQueryMod"))
 		})
 	})
 
-	Describe("Order By", func() {
-		var pa *paging.PageArgs
+	Describe("PaginateOption", func() {
+		It("should use WithDefaultSize when First is nil", func() {
+			args := &paging.PageArgs{}
 
-		BeforeEach(func() {
-			first := 0
-			after := "after"
-			pa = &paging.PageArgs{
-				After: &after,
-				First: &first,
-			}
+			page, err := paginator.Paginate(ctx, args, paging.WithDefaultSize(25))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(page.Nodes).To(HaveLen(25))
 		})
 
-		Describe("Default", func() {
-			It("should use `created_at` for default orderby column", func() {
-				sut := offset.New(pa, 5)
+		It("should cap page size with WithMaxSize", func() {
+			first := 500
+			args := &paging.PageArgs{First: &first}
 
-				Expect(sut.GetOrderBy()).To(Equal("created_at"))
-			})
+			page, err := paginator.Paginate(ctx, args, paging.WithMaxSize(100))
+			Expect(err).ToNot(HaveOccurred())
+			// Capped to 100, but only 100 total items exist
+			Expect(page.Nodes).To(HaveLen(100))
 		})
 
-		Describe("Multiple Columns", func() {
-			Describe("With DESC", func() {
-				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithMultiSort(pa,
-						paging.Sort{Column: "col1", Desc: true},
-						paging.Sort{Column: "col2", Desc: true},
-					)
-					sut := offset.New(pa, 5)
+		It("should allow page size within MaxSize", func() {
+			first := 50
+			args := &paging.PageArgs{First: &first}
 
-					Expect(sut.GetOrderBy()).To(Equal("col1 DESC, col2 DESC"))
-				})
-			})
-
-			Describe("With ASC", func() {
-				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithMultiSort(pa,
-						paging.Sort{Column: "col1", Desc: false},
-						paging.Sort{Column: "col2", Desc: false},
-					)
-					sut := offset.New(pa, 5)
-
-					Expect(sut.GetOrderBy()).To(Equal("col1, col2"))
-				})
-			})
+			page, err := paginator.Paginate(ctx, args, paging.WithMaxSize(100))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(page.Nodes).To(HaveLen(50))
 		})
 
-		Describe("Single Column", func() {
-			Describe("With DESC", func() {
-				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithSortBy(pa, "created_at", true)
-					sut := offset.New(pa, 5)
+		It("should cap large requests to DefaultMaxPageSize by default", func() {
+			first := 5000
+			args := &paging.PageArgs{First: &first}
 
-					Expect(sut.GetOrderBy()).To(Equal("created_at DESC"))
-				})
-			})
-
-			Describe("With ASC", func() {
-				It("should set the Paginator orderBy field", func() {
-					pa = paging.WithSortBy(pa, "created_at", false)
-					sut := offset.New(pa, 5)
-
-					Expect(sut.GetOrderBy()).To(Equal("created_at"))
-				})
-			})
+			page, err := paginator.Paginate(ctx, args)
+			Expect(err).ToNot(HaveOccurred())
+			// Capped to DefaultMaxPageSize (1000), but only 100 items exist
+			Expect(page.Nodes).To(HaveLen(100))
 		})
 	})
 })

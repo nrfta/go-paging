@@ -1,10 +1,8 @@
 package offset_test
 
 import (
-	"reflect"
 	"testing"
 
-	"github.com/aarondl/sqlboiler/v4/queries/qm"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -12,9 +10,4 @@ import (
 func TestOffset(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Offset Suite")
-}
-
-// modTypeName returns the type name of a query mod for assertion purposes.
-func modTypeName(mod qm.QueryMod) string {
-	return reflect.TypeOf(mod).String()
 }

@@ -78,17 +78,16 @@ func (w *Wrapper[T]) getMultiplier(iteration int) int {
 	return w.backoffMultipliers[min(iteration, len(w.backoffMultipliers)-1)]
 }
 
-// getRequestedSize extracts the requested page size from args, defaulting to defaultPageSize.
-func getRequestedSize(args *paging.PageArgs) int {
-	if args != nil && args.GetFirst() != nil && *args.GetFirst() > 0 {
-		return *args.GetFirst()
-	}
-	return defaultPageSize
-}
-
 // New creates a quota-fill paginator that adapts a fetcher with filtering.
 // The schema parameter provides both the cursor encoder and sort ordering,
 // ensuring they are always synchronized.
+//
+// Page size limits are configured per-request via Paginate() options:
+//
+//	paginator := quotafill.New(fetcher, filter, schema,
+//	    quotafill.WithMaxIterations(10),
+//	)
+//	result, _ := paginator.Paginate(ctx, args, paging.WithMaxSize(100))
 func New[T any](
 	fetcher paging.Fetcher[T],
 	filter paging.FilterFunc[T],
@@ -117,13 +116,15 @@ func New[T any](
 	}
 }
 
-func (w *Wrapper[T]) Paginate(ctx context.Context, args *paging.PageArgs) (*paging.Page[T], error) {
+func (w *Wrapper[T]) Paginate(ctx context.Context, args *paging.PageArgs, opts ...paging.PaginateOption) (*paging.Page[T], error) {
 	startTime := time.Now()
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, w.timeout)
 	defer cancel()
 
-	requestedSize := getRequestedSize(args)
+	// Apply per-request page size config
+	pageConfig := paging.ApplyPaginateOptions(args, opts...)
+	requestedSize := pageConfig.EffectiveLimit(args)
 	targetSize := requestedSize + 1
 
 	state := &paginationState[T]{

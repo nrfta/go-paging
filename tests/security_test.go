@@ -2,6 +2,7 @@ package paging_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/nrfta/paging-go/v2"
@@ -256,61 +257,95 @@ var _ = Describe("Security Tests", func() {
 				negative := -10
 				args := &paging.PageArgs{First: &negative}
 
-				paginator := offset.New(args, 100)
-				Expect(paginator).ToNot(BeNil())
-				// Should normalize to safe default or minimum
+				// Create mock fetcher
+				fetcher := &mockSecurityFetcher{totalCount: 100}
+				paginator := offset.New(fetcher)
+
+				page, err := paginator.Paginate(ctx, args)
+				Expect(err).ToNot(HaveOccurred())
+				// Should normalize to safe default
+				Expect(page.Nodes).ToNot(BeEmpty())
 			})
 
 			It("should handle zero page size", func() {
 				zero := 0
 				args := &paging.PageArgs{First: &zero}
 
-				paginator := offset.New(args, 100)
-				Expect(paginator).ToNot(BeNil())
-				// Should use default page size
+				fetcher := &mockSecurityFetcher{totalCount: 100}
+				paginator := offset.New(fetcher)
+
+				page, err := paginator.Paginate(ctx, args)
+				Expect(err).ToNot(HaveOccurred())
+				// Should use default page size (50)
+				Expect(page.Nodes).To(HaveLen(50))
 			})
 
 			It("should enforce maximum page size limits", func() {
 				huge := 999999
 				args := &paging.PageArgs{First: &huge}
 
-				paginator := offset.New(args, 100)
-				Expect(paginator).ToNot(BeNil())
-				// Implementation should cap at reasonable maximum
+				fetcher := &mockSecurityFetcher{totalCount: 100}
+				paginator := offset.New(fetcher)
+
+				page, err := paginator.Paginate(ctx, args)
+				Expect(err).ToNot(HaveOccurred())
+				// Should cap at DefaultMaxPageSize (1000), but only 100 items exist
+				Expect(page.Nodes).To(HaveLen(100))
 			})
 		})
 
 		Context("Cursor Validation", func() {
 			It("should handle nil cursors gracefully", func() {
-				args := &paging.PageArgs{After: nil}
+				first := 10
+				args := &paging.PageArgs{First: &first, After: nil}
 
 				schema := cursor.NewSchema[*models.User]().
 					Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
 					FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
 
-				users, err := models.Users(qm.Limit(10)).All(ctx, container.DB)
-				Expect(err).ToNot(HaveOccurred())
+				// Create fetcher and paginator
+				fetcher := sqlboiler.NewFetcher(
+					func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+						return models.Users(mods...).All(ctx, container.DB)
+					},
+					func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+						return 0, nil
+					},
+					sqlboiler.CursorToQueryMods,
+				)
+				paginator := cursor.New(fetcher, schema)
 
-				paginator, err := cursor.New(args, schema, users)
+				page, err := paginator.Paginate(ctx, args)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(paginator).ToNot(BeZero())
+				Expect(page).ToNot(BeNil())
+				Expect(page.Nodes).To(HaveLen(10))
 			})
 
 			It("should handle empty string cursors", func() {
 				empty := ""
-				args := &paging.PageArgs{After: &empty}
+				first := 10
+				args := &paging.PageArgs{First: &first, After: &empty}
 
 				schema := cursor.NewSchema[*models.User]().
 					Field("created_at", "c", func(u *models.User) any { return u.CreatedAt }).
 					FixedField("id", cursor.DESC, "i", func(u *models.User) any { return u.ID })
 
-				users, err := models.Users(qm.Limit(10)).All(ctx, container.DB)
-				Expect(err).ToNot(HaveOccurred())
+				// Create fetcher and paginator
+				fetcher := sqlboiler.NewFetcher(
+					func(ctx context.Context, mods ...qm.QueryMod) ([]*models.User, error) {
+						return models.Users(mods...).All(ctx, container.DB)
+					},
+					func(ctx context.Context, mods ...qm.QueryMod) (int64, error) {
+						return 0, nil
+					},
+					sqlboiler.CursorToQueryMods,
+				)
+				paginator := cursor.New(fetcher, schema)
 
-				// Should handle empty cursor gracefully
-				paginator, err := cursor.New(args, schema, users)
+				// Should handle empty cursor gracefully (treats as nil)
+				page, err := paginator.Paginate(ctx, args)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(paginator).ToNot(BeZero())
+				Expect(page).ToNot(BeNil())
 			})
 		})
 	})
@@ -419,12 +454,43 @@ var _ = Describe("Security Tests", func() {
 				huge := 1000000
 				args := &paging.PageArgs{First: &huge}
 
-				totalCount := int64(25)
-				paginator := offset.New(args, totalCount)
+				fetcher := &mockSecurityFetcher{totalCount: 25}
+				paginator := offset.New(fetcher)
 
-				// Should cap at reasonable limit
-				Expect(paginator).ToNot(BeNil())
+				page, err := paginator.Paginate(ctx, args)
+				Expect(err).ToNot(HaveOccurred())
+				// Should cap at DefaultMaxPageSize (1000), but only 25 items exist
+				Expect(page.Nodes).To(HaveLen(25))
 			})
 		})
 	})
 })
+
+// mockSecurityFetcher is a simple in-memory fetcher for security tests
+type mockSecurityFetcher struct {
+	totalCount int64
+}
+
+func (f *mockSecurityFetcher) Fetch(ctx context.Context, params paging.FetchParams) ([]*models.User, error) {
+	// Generate mock users up to the limit
+	count := params.Limit
+	if params.Offset+count > int(f.totalCount) {
+		count = int(f.totalCount) - params.Offset
+	}
+	if count < 0 {
+		count = 0
+	}
+
+	users := make([]*models.User, count)
+	for i := 0; i < count; i++ {
+		users[i] = &models.User{
+			ID:    fmt.Sprintf("user-%d", params.Offset+i+1),
+			Email: fmt.Sprintf("user%d@example.com", params.Offset+i+1),
+		}
+	}
+	return users, nil
+}
+
+func (f *mockSecurityFetcher) Count(ctx context.Context, params paging.FetchParams) (int64, error) {
+	return f.totalCount, nil
+}

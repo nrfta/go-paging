@@ -1,25 +1,22 @@
 // Package offset provides offset-based pagination functionality.
 //
 // This package implements traditional offset/limit pagination with support for
-// sorting and cursor encoding. It is designed to work with SQLBoiler query mods
-// and provides a clean interface for paginating database results.
+// sorting and cursor encoding. It implements the paging.Paginator[T] interface
+// and works with the Fetcher pattern for database abstraction.
 //
 // Example usage:
 //
-//	paginator := offset.New(pageArgs, totalCount)
-//	mods := paginator.QueryMods()
-//	results, err := models.Items(mods...).All(ctx, db)
+//	fetcher := sqlboiler.NewFetcher(queryFunc, countFunc, sqlboiler.OffsetToQueryMods)
+//	paginator := offset.New(fetcher)
+//	result, err := paginator.Paginate(ctx, args, paging.WithMaxSize(100))
+//	conn, err := offset.BuildConnection(result, toDomainModel)
 package offset
 
 import (
-	"strings"
+	"context"
 
 	"github.com/nrfta/paging-go/v2"
-
-	"github.com/aarondl/sqlboiler/v4/queries/qm"
 )
-
-const defaultLimitVal = 50
 
 // PageArgs represents pagination arguments.
 // This is a subset of the main PageArgs type to avoid import cycles.
@@ -31,174 +28,173 @@ type PageArgs interface {
 	GetSortBy() []paging.Sort
 }
 
-// Paginator is the paginator for offset-based pagination.
-// It encapsulates limit, offset, and page metadata for database queries.
-type Paginator struct {
-	Limit    int
-	Offset   int
-	PageInfo paging.PageInfo
-	orderBy  string
+// Paginator implements paging.Paginator[T] for offset-based pagination.
+// It wraps a Fetcher[T] and handles limit/offset calculation, ordering,
+// and page metadata generation.
+type Paginator[T any] struct {
+	fetcher paging.Fetcher[T]
 }
 
-// New creates a new offset paginator.
+// New creates an offset paginator that implements paging.Paginator[T].
+// Takes a Fetcher[T] which handles database queries.
 //
-// Parameters:
-//   - page: Pagination arguments including page size, cursor, and sorting
-//   - totalCount: Total number of records available
-//   - defaultLimit: Optional default page size (defaults to 50 if not provided)
+// The paginator is reusable across multiple requests - each Paginate() call
+// can have different page size limits.
 //
-// The paginator automatically handles:
-//   - Default page size of 50 records
-//   - Zero-value protection to prevent divide-by-zero errors
-//   - Sorting with default "created_at" column
-//   - Descending order when specified
-//   - Cursor encoding/decoding using base64
-func New(
-	page PageArgs,
-	totalCount int64,
-	defaultLimit ...*int,
-) Paginator {
-	limit := defaultLimitVal
-	if len(defaultLimit) > 0 && defaultLimit[0] != nil {
-		limit = *defaultLimit[0]
-	}
-
-	if page != nil && page.GetFirst() != nil && *page.GetFirst() > 0 {
-		limit = *page.GetFirst()
-	}
-
-	// Ensure limit is never 0 to avoid divide by zero
-	if limit == 0 {
-		limit = defaultLimitVal
-	}
-
-	var offset int
-	if page != nil {
-		offset = DecodeCursor(page.GetAfter())
-	}
-
-	orderBy := "created_at"
-	if page != nil && len(page.GetSortBy()) > 0 {
-		// Build ORDER BY from sort specifications
-		var parts []string
-		for _, sort := range page.GetSortBy() {
-			part := sort.Column
-			if sort.Desc {
-				part += " DESC"
-			}
-			parts = append(parts, part)
-		}
-		orderBy = strings.Join(parts, ", ")
-	}
-
-	pageInfo := newOffsetBasedPageInfo(&limit, totalCount, offset)
-
-	return Paginator{
-		Limit:    limit,
-		Offset:   offset,
-		PageInfo: pageInfo,
-		orderBy:  orderBy,
-	}
+// Example:
+//
+//	fetcher := sqlboiler.NewFetcher(queryFunc, countFunc, sqlboiler.OffsetToQueryMods)
+//	paginator := offset.New(fetcher)
+//	result, err := paginator.Paginate(ctx, args, paging.WithMaxSize(100))
+func New[T any](fetcher paging.Fetcher[T]) paging.Paginator[T] {
+	return &Paginator[T]{fetcher: fetcher}
 }
 
-// QueryMods returns SQLBoiler query modifiers for pagination.
-// These mods apply offset, limit, and order by clauses to a query.
+// Paginate executes offset-based pagination and returns a Page[T].
 //
-// Example usage:
+// The method:
+//  1. Applies page size configuration from options (WithMaxSize, WithDefaultSize)
+//  2. Calculates offset from cursor
+//  3. Builds ORDER BY clause from sort directives
+//  4. Fetches total count
+//  5. Fetches items with limit/offset
+//  6. Returns Page[T] with items, PageInfo, and metadata
 //
-//	items, err := models.Items(paginator.QueryMods()...).All(ctx, db)
-func (p *Paginator) QueryMods() []qm.QueryMod {
-	return []qm.QueryMod{
-		qm.Offset(p.Offset),
-		qm.Limit(p.Limit),
-		qm.OrderBy(p.orderBy),
+// Options:
+//   - WithMaxSize(n): Cap page size to maximum of n
+//   - WithDefaultSize(n): Use n as default when First is nil
+//
+// Example:
+//
+//	result, err := paginator.Paginate(ctx, args,
+//	    paging.WithMaxSize(1000),
+//	    paging.WithDefaultSize(50),
+//	)
+func (p *Paginator[T]) Paginate(
+	ctx context.Context,
+	args *paging.PageArgs,
+	opts ...paging.PaginateOption,
+) (*paging.Page[T], error) {
+	// Apply page size config from options
+	pageConfig := paging.ApplyPaginateOptions(args, opts...)
+	limit := pageConfig.EffectiveLimit(args)
+
+	// Calculate offset from cursor
+	offset := 0
+	if args != nil && args.GetAfter() != nil {
+		offset = DecodeCursor(args.GetAfter())
 	}
-}
 
-// GetPageInfo returns the PageInfo for this paginator.
-// PageInfo contains functions to retrieve pagination metadata like
-// total count, cursors, and whether next/previous pages exist.
-func (p *Paginator) GetPageInfo() paging.PageInfo {
-	return p.PageInfo
-}
+	// Build ORDER BY clause
+	orderBy := buildOrderBy(args)
 
-// GetOrderBy returns the ORDER BY clause used by this paginator.
-// This includes the column names and DESC modifier if applicable.
-func (p *Paginator) GetOrderBy() string {
-	return p.orderBy
-}
+	// Get total count
+	totalCount, err := p.fetcher.Count(ctx, paging.FetchParams{})
+	if err != nil {
+		return nil, err
+	}
 
-// BuildConnection creates a Relay-compliant GraphQL connection from a slice of items.
-// It handles transformation from database models to domain models and automatically
-// generates sequential offset-based cursors for each item.
-//
-// This function eliminates the manual boilerplate of building edges and nodes arrays,
-// reducing repository code by 60-80%.
-//
-// Type parameters:
-//   - From: Source type (e.g., *models.User from SQLBoiler)
-//   - To: Target type (e.g., *domain.User for GraphQL)
-//
-// Parameters:
-//   - paginator: The offset paginator containing pagination state
-//   - items: Slice of database records to transform
-//   - transform: Function that converts database model to domain model
-//
-// Returns a Connection with edges, nodes, and pageInfo populated.
-//
-// Example usage:
-//
-//	// Before (manual boilerplate - 25+ lines):
-//	result := &domain.UserConnection{PageInfo: &paginator.PageInfo}
-//	for i, row := range dbUsers {
-//	    user, err := toDomainUser(row)
-//	    if err != nil { return nil, err }
-//	    result.Edges = append(result.Edges, domain.Edge{
-//	        Cursor: *offset.EncodeCursor(paginator.Offset + i + 1),
-//	        Node:   user,
-//	    })
-//	    result.Nodes = append(result.Nodes, user)
-//	}
-//
-//	// After (using BuildConnection - 1 line):
-//	return offset.BuildConnection(paginator, dbUsers, toDomainUser)
-func BuildConnection[From any, To any](
-	paginator Paginator,
-	items []From,
-	transform func(From) (To, error),
-) (*paging.Connection[To], error) {
-	return paging.BuildConnection(
-		items,
-		paginator.PageInfo,
-		func(i int, _ From) string {
-			return *EncodeCursor(paginator.Offset + i + 1)
+	// Fetch items
+	params := paging.FetchParams{
+		Limit:   limit,
+		Offset:  offset,
+		OrderBy: orderBy,
+	}
+	items, err := p.fetcher.Fetch(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build PageInfo
+	pageInfo := buildOffsetPageInfo(limit, totalCount, offset)
+
+	return &paging.Page[T]{
+		Nodes:    items,
+		PageInfo: &pageInfo,
+		Metadata: paging.Metadata{
+			Strategy:    "offset",
+			QueryTimeMs: 0, // TODO: track timing
+			Offset:      offset,
 		},
-		transform,
-	)
+	}, nil
 }
 
-// newOffsetBasedPageInfo creates PageInfo for offset-based pagination.
+// buildOrderBy constructs the ORDER BY directives from PageArgs.
+// Defaults to "created_at" if no sort is specified.
+func buildOrderBy(args *paging.PageArgs) []paging.Sort {
+	if args == nil || args.GetSortBy() == nil || len(args.GetSortBy()) == 0 {
+		return []paging.Sort{{Column: "created_at", Desc: false}}
+	}
+	return args.GetSortBy()
+}
+
+// buildOffsetPageInfo creates PageInfo for offset-based pagination.
 // It calculates page boundaries and provides functions to query pagination state.
 //
 // The endOffset calculation ensures the last page cursor points to the start
 // of the final complete page of results.
-func newOffsetBasedPageInfo(
-	pageSize *int,
+func buildOffsetPageInfo(
+	pageSize int,
 	totalCount int64,
 	currentOffset int,
 ) paging.PageInfo {
 	count := int(totalCount)
-	endOffset := count - (count % *pageSize)
+	endOffset := count - (count % pageSize)
 
 	if endOffset == count {
-		endOffset = count - *pageSize
+		endOffset = count - pageSize
+	}
+	if endOffset < 0 {
+		endOffset = 0
 	}
 
 	return paging.PageInfo{
 		TotalCount:      func() (*int, error) { return &count, nil },
 		StartCursor:     func() (*string, error) { return EncodeCursor(0), nil },
 		EndCursor:       func() (*string, error) { return EncodeCursor(endOffset), nil },
-		HasNextPage:     func() (bool, error) { return (currentOffset+*pageSize < count), nil },
+		HasNextPage:     func() (bool, error) { return (currentOffset + pageSize) < count, nil },
 		HasPreviousPage: func() (bool, error) { return currentOffset > 0, nil },
 	}
+}
+
+// BuildConnection transforms a Page[From] to a Connection[To] for GraphQL.
+// It handles transformation from database models to domain models and generates
+// sequential offset-based cursors for each item.
+//
+// This function eliminates the manual boilerplate of building edges and nodes arrays.
+//
+// Type parameters:
+//   - From: Source type (e.g., *models.User from SQLBoiler)
+//   - To: Target type (e.g., *domain.User for GraphQL)
+//
+// Parameters:
+//   - page: The Page[From] returned from Paginate()
+//   - transform: Function that converts database model to domain model
+//
+// Returns a Connection with edges, nodes, and pageInfo populated.
+//
+// Example:
+//
+//	result, _ := paginator.Paginate(ctx, args, paging.WithMaxSize(100))
+//	conn, _ := offset.BuildConnection(result, toDomainUser)
+func BuildConnection[From any, To any](
+	page *paging.Page[From],
+	transform func(From) (To, error),
+) (*paging.Connection[To], error) {
+	// Get starting offset from page metadata
+	// This allows correct cursor generation for pages beyond the first one
+	startOffset := page.Metadata.Offset
+
+	return paging.BuildConnection(
+		page.Nodes,
+		*page.PageInfo,
+		func(i int, _ From) string {
+			cursor := EncodeCursor(startOffset + i + 1)
+			if cursor == nil {
+				return ""
+			}
+			return *cursor
+		},
+		transform,
+	)
 }

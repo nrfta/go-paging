@@ -9,12 +9,21 @@ import "context"
 //
 // Example implementations:
 //   - offset.Paginator: Traditional offset/limit pagination
-//   - cursor.Paginator: High-performance cursor-based pagination (Phase 2)
-//   - quotafill.Wrapper: Filtering-aware pagination (Phase 3)
+//   - cursor.Paginator: High-performance cursor-based pagination
+//   - quotafill.Wrapper: Filtering-aware pagination
+//
+// Example usage:
+//
+//	paginator := offset.New(fetcher)
+//	result, err := paginator.Paginate(ctx, args,
+//	    paging.WithMaxSize(100),
+//	    paging.WithDefaultSize(25),
+//	)
 type Paginator[T any] interface {
 	// Paginate executes pagination and returns a page of results.
 	// The PageArgs contain the page size (First) and cursor position (After).
-	Paginate(ctx context.Context, args *PageArgs) (*Page[T], error)
+	// Options like WithMaxSize and WithDefaultSize configure per-request page size limits.
+	Paginate(ctx context.Context, args *PageArgs, opts ...PaginateOption) (*Page[T], error)
 }
 
 // Page represents a single page of paginated results.
@@ -54,6 +63,11 @@ type Metadata struct {
 	// SafeguardHit indicates if a safeguard was triggered during quota-fill.
 	// Values: nil (no safeguard), "max_iterations", "max_records", "timeout"
 	SafeguardHit *string
+
+	// Offset is the current offset position for offset-based pagination.
+	// This field is only populated when Strategy is "offset".
+	// Used by BuildConnection to generate accurate cursors for multi-page results.
+	Offset int
 }
 
 // Fetcher abstracts database queries for any ORM or database layer.

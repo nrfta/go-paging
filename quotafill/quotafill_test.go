@@ -564,3 +564,78 @@ func rejectAllFilter() func(context.Context, []testItem) ([]testItem, error) {
 		return []testItem{}, nil
 	}
 }
+
+var _ = Describe("PaginateOption", func() {
+	It("should use WithDefaultSize when First is nil", func() {
+		fetcher := newMockFetcher([]testItem{
+			{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
+			{ID: 6}, {ID: 7}, {ID: 8}, {ID: 9}, {ID: 10},
+			{ID: 11}, {ID: 12}, {ID: 13}, {ID: 14}, {ID: 15},
+			{ID: 16}, {ID: 17}, {ID: 18}, {ID: 19}, {ID: 20},
+			{ID: 21}, {ID: 22}, {ID: 23}, {ID: 24}, {ID: 25},
+			{ID: 26},
+		})
+
+		wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
+
+		args := &paging.PageArgs{}
+		page, err := wrapper.Paginate(context.Background(), args,
+			paging.WithDefaultSize(25),
+		)
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(page.Nodes).To(HaveLen(25))
+	})
+
+	It("should cap page size with WithMaxSize", func() {
+		fetcher := newMockFetcher([]testItem{
+			{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
+		})
+
+		wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
+
+		first := 100
+		args := &paging.PageArgs{First: &first}
+		page, err := wrapper.Paginate(context.Background(), args,
+			paging.WithMaxSize(3),
+		)
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(page.Nodes).To(HaveLen(3))
+	})
+
+	It("should allow page size within MaxSize", func() {
+		fetcher := newMockFetcher([]testItem{
+			{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
+		})
+
+		wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
+
+		first := 3
+		args := &paging.PageArgs{First: &first}
+		page, err := wrapper.Paginate(context.Background(), args,
+			paging.WithMaxSize(100),
+		)
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(page.Nodes).To(HaveLen(3))
+	})
+
+	It("should not enforce max when no options are provided", func() {
+		// Generate 60 items (more than default max of 50)
+		items := make([]testItem, 60)
+		for i := range items {
+			items[i] = testItem{ID: i + 1}
+		}
+		fetcher := newMockFetcher(items)
+
+		wrapper := quotafill.New[testItem](fetcher, passAllFilter(), nil)
+
+		first := 55
+		args := &paging.PageArgs{First: &first}
+		page, err := wrapper.Paginate(context.Background(), args)
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(page.Nodes).To(HaveLen(55))
+	})
+})

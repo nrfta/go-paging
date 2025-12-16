@@ -179,8 +179,17 @@ func (w *Wrapper[T]) fetchIteration(
 	batchSize := remaining * w.getMultiplier(state.iteration)
 	fetchSize := batchSize + 1
 
-	if state.examinedCount+fetchSize > w.maxRecordsExamined {
-		return safeguardMaxRecords
+	// Cap fetch size to remaining examination budget
+	maxAllowed := w.maxRecordsExamined - state.examinedCount
+	if fetchSize > maxAllowed {
+		if maxAllowed < 2 {
+			// Need at least 2 records for N+1 pattern (1 to return, 1 for hasNext)
+			// If budget doesn't allow this, trigger safeguard
+			return safeguardMaxRecords
+		}
+		// Cap the fetch to remaining budget while maintaining N+1 pattern
+		fetchSize = maxAllowed
+		batchSize = fetchSize - 1
 	}
 
 	// Get encoder from schema for the current args

@@ -131,27 +131,39 @@ func buildOrderBy(args *paging.PageArgs) []paging.Sort {
 // buildOffsetPageInfo creates PageInfo for offset-based pagination.
 // It calculates page boundaries and provides functions to query pagination state.
 //
-// The endOffset calculation ensures the last page cursor points to the start
-// of the final complete page of results.
+// StartCursor and EndCursor point to the first and last items on the current page,
+// not the first or last page of the entire dataset.
 func buildOffsetPageInfo(
 	pageSize int,
 	totalCount int64,
 	currentOffset int,
 ) paging.PageInfo {
 	count := int(totalCount)
-	endOffset := count - (count % pageSize)
-
-	if endOffset == count {
-		endOffset = count - pageSize
-	}
-	if endOffset < 0 {
-		endOffset = 0
-	}
 
 	return paging.PageInfo{
-		TotalCount:      func() (*int, error) { return &count, nil },
-		StartCursor:     func() (*string, error) { return EncodeCursor(0), nil },
-		EndCursor:       func() (*string, error) { return EncodeCursor(endOffset), nil },
+		TotalCount: func() (*int, error) { return &count, nil },
+		StartCursor: func() (*string, error) {
+			if count == 0 {
+				return nil, nil
+			}
+			// Cursor of the first item on current page
+			return EncodeCursor(currentOffset + 1), nil
+		},
+		EndCursor: func() (*string, error) {
+			if count == 0 {
+				return nil, nil
+			}
+			// Calculate the offset of the last item on this page
+			lastItemOffset := currentOffset + pageSize - 1
+			if lastItemOffset >= count {
+				lastItemOffset = count - 1
+			}
+			if lastItemOffset < currentOffset {
+				return nil, nil
+			}
+			// Cursor encodes position after the item (lastItemOffset + 1)
+			return EncodeCursor(lastItemOffset + 1), nil
+		},
 		HasNextPage:     func() (bool, error) { return (currentOffset + pageSize) < count, nil },
 		HasPreviousPage: func() (bool, error) { return currentOffset > 0, nil },
 	}

@@ -116,11 +116,15 @@ var _ = Describe("Paginator", func() {
 			hasPreviousPage, _ := page.PageInfo.HasPreviousPage()
 			Expect(hasPreviousPage).To(Equal(true))
 
+			// StartCursor should point to first item on current page (offset 20)
+			// Cursor encoding is offset + 1, so cursor = 21
 			startCursor, _ := page.PageInfo.StartCursor()
-			Expect(startCursor).To(Equal(offset.EncodeCursor(0)))
+			Expect(startCursor).To(Equal(offset.EncodeCursor(21)))
 
+			// EndCursor should point to last item on current page (offset 29)
+			// Cursor encoding is offset + 1, so cursor = 30
 			endCursor, _ := page.PageInfo.EndCursor()
-			Expect(endCursor).To(Equal(offset.EncodeCursor(90)))
+			Expect(endCursor).To(Equal(offset.EncodeCursor(30)))
 		})
 	})
 
